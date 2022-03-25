@@ -23,20 +23,17 @@ import (
 	"github.com/rs/cors"
 )
 
-// TODO: should get by hash work its way backwards
-// until it finds the value?
-
 type DaisyChainServer struct {
-	rpcServer    *http.Server
-	wsServer     *http.Server
-	maxBodySize  int64
-	epoch1RPCURL string
-	epoch2RPCURL string
-	epoch3RPCURL string
-	epoch4RPCURL string
-	epoch5RPCURL string
-	epoch6RPCURL string
-	client       *http.Client
+	rpcServer   *http.Server
+	wsServer    *http.Server
+	maxBodySize int64
+	client      *http.Client
+	epoch1      *Backend
+	epoch2      *Backend
+	epoch3      *Backend
+	epoch4      *Backend
+	epoch5      *Backend
+	epoch6      *Backend
 }
 
 // TODO: support "latest" for epoch
@@ -138,19 +135,15 @@ var hashMethods = map[string]int{
 	"eth_getTransactionReceipt":                0,
 }
 
-func NewDaisyChainServer(urls []string) *DaisyChainServer {
-	if len(urls) != 6 {
-		panic("must pass 6 urls")
-	}
-
+func NewDaisyChainServer(one, two, three, four, five, six *Backend) *DaisyChainServer {
 	srv := DaisyChainServer{
-		maxBodySize:  100_000, // TODO: from config
-		epoch1RPCURL: urls[0],
-		epoch2RPCURL: urls[1],
-		epoch3RPCURL: urls[2],
-		epoch4RPCURL: urls[3],
-		epoch5RPCURL: urls[4],
-		epoch6RPCURL: urls[5],
+		maxBodySize: 100_000, // TODO: from config
+		epoch1:      one,
+		epoch2:      two,
+		epoch3:      three,
+		epoch4:      four,
+		epoch5:      five,
+		epoch6:      six,
 	}
 
 	srv.client = &http.Client{
@@ -160,36 +153,36 @@ func NewDaisyChainServer(urls []string) *DaisyChainServer {
 	return &srv
 }
 
-func StartDaisyChain(config *DaisyChainConfig) (func(), error) {
-	epoch1RPCURL := config.Backends.Epoch1RPCURL
-	epoch2RPCURL := config.Backends.Epoch2RPCURL
-	epoch3RPCURL := config.Backends.Epoch3RPCURL
-	epoch4RPCURL := config.Backends.Epoch4RPCURL
-	epoch5RPCURL := config.Backends.Epoch5RPCURL
-	epoch6RPCURL := config.Backends.Epoch6RPCURL
-
-	urls := []string{
-		epoch1RPCURL,
-		epoch2RPCURL,
-		epoch3RPCURL,
-		epoch4RPCURL,
-		epoch5RPCURL,
-		epoch6RPCURL,
+func StartDaisyChain(config *Config) (func(), error) {
+	if err := config.ValidateDaisyChainBackends(); err != nil {
+		return nil, err
 	}
 
-	defined := false
-	for i, url := range urls {
-		if url != "" {
-			log.Info("epoch rpc url defined", "epoch", i+1)
-			defined = true
-		}
+	// TODO: figure out how to not need to pass
+	// in the rate limiter here by parsing the
+	// args in the config and creating it in there
+	lim := NewLocalRateLimiter()
+	_, backendsByName, err := config.BuildBackends(lim)
+	if err != nil {
+		return nil, err
 	}
-	if !defined {
-		panic("must define one epoch url")
-	}
+
+	epoch1 := backendsByName["epoch1"]
+	epoch2 := backendsByName["epoch2"]
+	epoch3 := backendsByName["epoch3"]
+	epoch4 := backendsByName["epoch4"]
+	epoch5 := backendsByName["epoch5"]
+	epoch6 := backendsByName["epoch6"]
 
 	// parse the config
-	srv := NewDaisyChainServer(urls)
+	srv := NewDaisyChainServer(
+		epoch1,
+		epoch2,
+		epoch3,
+		epoch4,
+		epoch5,
+		epoch6,
+	)
 
 	if config.Metrics.Enabled {
 		addr := fmt.Sprintf("%s:%d", config.Metrics.Host, config.Metrics.Port)
@@ -271,6 +264,7 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 		// TODO: argTypes doesn't have all required entries
 		argType, ok := argTypes[req.Method]
 		if !ok {
+			// TODO: better error handling
 			fmt.Println("ERROR")
 			return
 		}
@@ -303,13 +297,13 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 		// most recent node doesn't start with a 0 blocknumber
 		// We haven't completely derisked the diff to geth it
 		// is to have non contiguous block data
-		if s.epoch6RPCURL == "" {
+		if s.epoch6 == nil {
 			log.Error("Request for latest epoch cannot be handled")
 			writeRPCError(ctx, w, nil, errors.New("must configure epoch 6 url"))
 			return
 		}
 
-		backendRes := s.handleSingleRPC(ctx, s.epoch6RPCURL, req)
+		backendRes, _ := s.epoch6.Forward(ctx, req)
 		writeRPCRes(ctx, w, backendRes)
 		return
 	}
@@ -317,6 +311,8 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 	values, err := parsePositionalArguments(req.Params, argType)
 	if err != nil {
 		log.Error("Cannot parse JSON RPC arguments")
+		// TODO: unify the error res logic
+		// NewRPCErrorRes vs writeRPCError
 		res := NewRPCErrorRes(nil, err)
 		writeRPCRes(ctx, w, res)
 		return
@@ -334,14 +330,14 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 	// When the final argument is not passed, forward
 	// to the latest
 	if argument == nil {
-		if s.epoch6RPCURL == "" {
+		if s.epoch6 == nil {
 			writeRPCError(ctx, w, nil, errors.New("must configure epoch 6 url"))
 			return
 		}
 
 		// TODO: this may need to go to 5 and 6 depending on a height
 		// if we decide to start epoch 6 at non zero block number
-		backendRes := s.handleSingleRPC(ctx, s.epoch6RPCURL, req)
+		backendRes, _ := s.epoch6.Forward(ctx, req)
 		writeRPCRes(ctx, w, backendRes)
 		return
 	}
@@ -351,29 +347,26 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 		argument.Epoch = &latestEpoch
 	}
 
-	url := ""
+	var backend *Backend
 	switch *argument.Epoch {
 	case 6:
-		url = s.epoch6RPCURL
+		backend = s.epoch6
 	case 5:
-		url = s.epoch5RPCURL
+		backend = s.epoch5
 	case 4:
-		url = s.epoch4RPCURL
+		backend = s.epoch4
 	case 3:
-		url = s.epoch3RPCURL
+		backend = s.epoch3
 	case 2:
-		url = s.epoch2RPCURL
+		backend = s.epoch2
 	case 1:
-		url = s.epoch1RPCURL
+		backend = s.epoch1
 	default:
 		writeRPCError(ctx, w, nil, errors.New("bad epoch"))
 		return
 	}
 
-	// TODO: delete this so a url with a key doesn't leak
-	log.Info("Sending rpc req", "url", url)
-
-	if url == "" {
+	if backend == nil {
 		writeRPCError(ctx, w, nil, errors.New("epoch not configured"))
 		return
 	}
@@ -385,8 +378,10 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	log.Info("Sending rpc req", "backend", backend, "method", req.Method)
+
 	req.Params = raw
-	backendRes := s.handleSingleRPC(ctx, url, req)
+	backendRes, _ := backend.Forward(ctx, req)
 	writeRPCRes(ctx, w, backendRes)
 }
 
@@ -453,53 +448,20 @@ func (s *DaisyChainServer) populateContext(w http.ResponseWriter, r *http.Reques
 	)
 }
 
-func (s *DaisyChainServer) handleSingleRPC(ctx context.Context, url string, req *RPCReq) *RPCRes {
-	if url == "" {
-		return NewRPCErrorRes(nil, errors.New("no backend url"))
-	}
-
-	if err := ValidateRPCReq(req); err != nil {
-		RecordRPCError(ctx, BackendProxyd, MethodUnknown, err)
-		return NewRPCErrorRes(nil, err)
-	}
-
-	body := mustMarshalJSON(req)
-	httpReq, err := http.NewRequest("POST", url, bytes.NewReader(body))
-	if err != nil {
-		return NewRPCErrorRes(req.ID, err)
-	}
-
-	httpReq.Header.Set("content-type", "application/json")
-	httpRes, err := s.client.Do(httpReq)
-	if err != nil {
-		return NewRPCErrorRes(req.ID, err)
-	}
-
-	defer httpRes.Body.Close()
-	resB, err := ioutil.ReadAll(io.LimitReader(httpRes.Body, s.maxBodySize))
-
-	backendRes := new(RPCRes)
-	if err := json.Unmarshal(resB, backendRes); err != nil {
-		return NewRPCErrorRes(req.ID, err)
-	}
-
-	return backendRes
-}
-
 // Tries each rpc url one after another
 func (s *DaisyChainServer) handleHashTaggedRPC(ctx context.Context, req *RPCReq) *RPCRes {
-	urls := []string{
-		s.epoch6RPCURL,
-		s.epoch5RPCURL,
-		s.epoch4RPCURL,
-		s.epoch3RPCURL,
-		s.epoch2RPCURL,
-		s.epoch1RPCURL,
+	backends := []*Backend{
+		s.epoch6,
+		s.epoch5,
+		s.epoch4,
+		s.epoch3,
+		s.epoch2,
+		s.epoch1,
 	}
 
 	var res *RPCRes
-	for _, url := range urls {
-		res = s.handleSingleRPC(ctx, url, req)
+	for _, backend := range backends {
+		res, _ = backend.Forward(ctx, req)
 		if !res.IsError() {
 			break
 		}

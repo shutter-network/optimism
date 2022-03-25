@@ -19,6 +19,9 @@ var (
 func main() {
 	// Set up logger with a default INFO level in case we fail to parse flags.
 	// Otherwise the final critical log won't show what the parsing error was.
+
+	// TODO: is there a clean way to be able to configure the logformat?
+
 	log.Root().SetHandler(
 		log.LvlFilterHandler(
 			log.LvlInfo,
@@ -32,9 +35,18 @@ func main() {
 		log.Crit("must specify a config file on the command line")
 	}
 
-	config := new(proxyd.DaisyChainConfig)
+	config := new(proxyd.Config)
 	if _, err := toml.DecodeFile(os.Args[1], config); err != nil {
 		log.Crit("error reading config file", "err", err)
+	}
+
+	if config.LogFormat == "fmt" {
+		log.Root().SetHandler(
+			log.LvlFilterHandler(
+				log.LvlInfo,
+				log.StreamHandler(os.Stdout, log.LogfmtFormat()),
+			),
+		)
 	}
 
 	shutdown, err := proxyd.StartDaisyChain(config)

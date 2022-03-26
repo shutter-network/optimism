@@ -51,7 +51,7 @@ func main() {
 
 	shutdown, err := proxyd.StartDaisyChain(config)
 	if err != nil {
-		log.Crit("error starting proxyd", "err", err)
+		log.Crit("error starting daisychain", "err", err)
 	}
 
 	sig := make(chan os.Signal, 1)

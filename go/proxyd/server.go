@@ -342,6 +342,8 @@ func writeRPCError(ctx context.Context, w http.ResponseWriter, id json.RawMessag
 	var res *RPCRes
 	if r, ok := err.(*RPCErr); ok {
 		res = NewRPCErrorRes(id, r)
+	} else if errors.Is(err, ErrParseErr) {
+		res = NewRPCErrorRes(id, ErrParseErr)
 	} else {
 		res = NewRPCErrorRes(id, ErrInternal)
 	}

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"reflect"
 	"strings"
@@ -23,17 +24,22 @@ import (
 	"github.com/rs/cors"
 )
 
+var (
+	MainnetChainId = big.NewInt(10)
+	KovanChainId   = big.NewInt(69)
+)
+
 type DaisyChainServer struct {
 	rpcServer   *http.Server
 	wsServer    *http.Server
 	maxBodySize int64
-	client      *http.Client
 	epoch1      *Backend
 	epoch2      *Backend
 	epoch3      *Backend
 	epoch4      *Backend
 	epoch5      *Backend
 	epoch6      *Backend
+	chainId     *big.Int
 }
 
 // TODO: support "latest" for epoch
@@ -43,8 +49,34 @@ type RequestOptions struct {
 
 var latestEpoch = uint(6)
 
+// TODO: make this generic
+func ptr(n hexutil.Uint64) *hexutil.Uint64 {
+	return &n
+}
+
 // TODO: also add in debug methods
 var argTypes = map[string][]reflect.Type{
+	// PublicEthereumAPI
+	"eth_gasPrice": []reflect.Type{
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_maxPriorityFeePerGas": []reflect.Type{
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_feeHistory": []reflect.Type{
+		reflect.TypeOf(rpc.DecimalOrHex(0)),
+		reflect.TypeOf(rpc.BlockNumber(0)),
+		reflect.TypeOf([]float64{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_syncing": []reflect.Type{
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_chainId": []reflect.Type{
+		reflect.TypeOf(&RequestOptions{}),
+	},
+
+	// PublicBlockChainAPI
 	"eth_blockNumber": []reflect.Type{
 		reflect.TypeOf(&RequestOptions{}),
 	},
@@ -63,8 +95,17 @@ var argTypes = map[string][]reflect.Type{
 		reflect.TypeOf(rpc.BlockNumber(0)),
 		reflect.TypeOf(&RequestOptions{}),
 	},
+	"eth_getHeaderByHash": []reflect.Type{
+		reflect.TypeOf(common.Hash{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
 	"eth_getBlockByNumber": []reflect.Type{
 		reflect.TypeOf(rpc.BlockNumber(0)),
+		reflect.TypeOf(true),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_getBlockByHash": []reflect.Type{
+		reflect.TypeOf(common.Hash{}),
 		reflect.TypeOf(true),
 		reflect.TypeOf(&RequestOptions{}),
 	},
@@ -73,10 +114,15 @@ var argTypes = map[string][]reflect.Type{
 		reflect.TypeOf(hexutil.Uint(0)),
 		reflect.TypeOf(&RequestOptions{}),
 	},
+	"eth_getUncleByBlockHashAndIndex": []reflect.Type{
+		reflect.TypeOf(common.Hash{}),
+		reflect.TypeOf(hexutil.Uint(0)),
+	},
 	"eth_getUncleCountByBlockNumber": []reflect.Type{
 		reflect.TypeOf(rpc.BlockNumber(0)),
 		reflect.TypeOf(&RequestOptions{}),
 	},
+	"eth_getUncleCountByBlockHash": []reflect.Type{},
 	"eth_getCode": []reflect.Type{
 		reflect.TypeOf(common.Address{}),
 		reflect.TypeOf(&RequestOptions{}),
@@ -94,11 +140,32 @@ var argTypes = map[string][]reflect.Type{
 		reflect.TypeOf(&StateOverride{}),
 		reflect.TypeOf(&RequestOptions{}),
 	},
+	"eth_estimateGas": []reflect.Type{
+		reflect.TypeOf(TransactionArgs{}),
+		reflect.TypeOf(rpc.BlockNumberOrHash{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_createAccessList": []reflect.Type{
+		reflect.TypeOf(TransactionArgs{}),
+		reflect.TypeOf(rpc.BlockNumberOrHash{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+
+	// PublicTransactionPoolAPI
 	"eth_getBlockTransactionCountByNumber": []reflect.Type{
 		reflect.TypeOf(rpc.BlockNumber(0)),
 		reflect.TypeOf(&RequestOptions{}),
 	},
+	"eth_getBlockTransactionCountByHash": []reflect.Type{
+		reflect.TypeOf(rpc.BlockNumber(0)),
+		reflect.TypeOf(&RequestOptions{}),
+	},
 	"eth_getTransactionByBlockNumberAndIndex": []reflect.Type{
+		reflect.TypeOf(rpc.BlockNumber(0)),
+		reflect.TypeOf(hexutil.Uint(0)),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_getTransactionByBlockHashAndIndex": []reflect.Type{
 		reflect.TypeOf(rpc.BlockNumber(0)),
 		reflect.TypeOf(hexutil.Uint(0)),
 		reflect.TypeOf(&RequestOptions{}),
@@ -108,48 +175,77 @@ var argTypes = map[string][]reflect.Type{
 		reflect.TypeOf(hexutil.Uint(0)),
 		reflect.TypeOf(&RequestOptions{}),
 	},
+	"eth_getRawTransactionByBlockHashAndIndex": []reflect.Type{
+		reflect.TypeOf(common.Hash{}),
+		reflect.TypeOf(hexutil.Uint(0)),
+		reflect.TypeOf(&RequestOptions{}),
+	},
 	"eth_getTransactionCount": []reflect.Type{
 		reflect.TypeOf(common.Address{}),
 		reflect.TypeOf(rpc.BlockNumberOrHash{}),
 		reflect.TypeOf(&RequestOptions{}),
 	},
+	"eth_getTransactionByHash": []reflect.Type{
+		reflect.TypeOf(common.Hash{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_getRawTransactionByHash": []reflect.Type{
+		reflect.TypeOf(common.Hash{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_getTransactionReceipt": []reflect.Type{
+		reflect.TypeOf(common.Hash{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_sendTransaction": []reflect.Type{
+		reflect.TypeOf(TransactionArgs{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_fillTransaction": []reflect.Type{
+		reflect.TypeOf(TransactionArgs{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_sendRawTransaction": []reflect.Type{
+		reflect.TypeOf(hexutil.Bytes{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_sign": []reflect.Type{
+		reflect.TypeOf(common.Address{}),
+		reflect.TypeOf(hexutil.Bytes{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_signTransaction": []reflect.Type{
+		reflect.TypeOf(TransactionArgs{}),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_pendingTransactions": []reflect.Type{
+		reflect.TypeOf(&RequestOptions{}),
+	},
+	"eth_resend": []reflect.Type{
+		reflect.TypeOf(TransactionArgs{}),
+		reflect.TypeOf(&hexutil.Big{}),
+		reflect.TypeOf(ptr(hexutil.Uint64(0))),
+		reflect.TypeOf(&RequestOptions{}),
+	},
+
+	// TODO: fill these out
+	// NewPublicTxPoolAPI
+	"txpool_content":     []reflect.Type{},
+	"txpool_contentFrom": []reflect.Type{},
+	"txpool_status":      []reflect.Type{},
+	"txpool_inspect":     []reflect.Type{},
 }
 
-// mapping of method to index of hash in rpc params
-var hashMethods = map[string]int{
-	"eth_getBalance":                           1,
-	"eth_getProof":                             2,
-	"eth_getBlockByHash":                       0,
-	"eth_getUncleByBlockHashAndIndex":          0,
-	"eth_getUncleCountByBlockHash":             0,
-	"eth_getCode":                              1,
-	"eth_getStorageAt":                         2,
-	"eth_call":                                 1,
-	"eth_estimateGas":                          2,
-	"eth_getBlockTransactionCountByHash":       0,
-	"eth_getTransactionByBlockHashAndIndex":    0,
-	"eth_getRawTransactionByBlockHashAndIndex": 0,
-	"eth_getTransactionCount":                  1,
-	"eth_getTransactionByHash":                 0,
-	"eth_getRawTransactionByHash":              0,
-	"eth_getTransactionReceipt":                0,
-}
-
-func NewDaisyChainServer(one, two, three, four, five, six *Backend) *DaisyChainServer {
+func NewDaisyChainServer(backends map[string]*Backend, maxBodySize int64) *DaisyChainServer {
 	srv := DaisyChainServer{
-		maxBodySize: 100_000, // TODO: from config
-		epoch1:      one,
-		epoch2:      two,
-		epoch3:      three,
-		epoch4:      four,
-		epoch5:      five,
-		epoch6:      six,
+		epoch1:      backends["epoch1"],
+		epoch2:      backends["epoch2"],
+		epoch3:      backends["epoch3"],
+		epoch4:      backends["epoch4"],
+		epoch5:      backends["epoch5"],
+		epoch6:      backends["epoch6"],
+		maxBodySize: maxBodySize,
 	}
-
-	srv.client = &http.Client{
-		Timeout: 5 * time.Second,
-	}
-
 	return &srv
 }
 
@@ -167,22 +263,37 @@ func StartDaisyChain(config *Config) (func(), error) {
 		return nil, err
 	}
 
-	epoch1 := backendsByName["epoch1"]
-	epoch2 := backendsByName["epoch2"]
-	epoch3 := backendsByName["epoch3"]
-	epoch4 := backendsByName["epoch4"]
-	epoch5 := backendsByName["epoch5"]
-	epoch6 := backendsByName["epoch6"]
-
 	// parse the config
 	srv := NewDaisyChainServer(
-		epoch1,
-		epoch2,
-		epoch3,
-		epoch4,
-		epoch5,
-		epoch6,
+		backendsByName,
+		config.Server.MaxBodySizeBytes,
 	)
+
+	// send a chain id request to each node to ensure they are on the same chain
+	req, _ := ParseRPCReq([]byte(`{"id":"1","jsonrpc":"2.0","method":"eth_chainId","params":[]}`))
+	chainIds := []*hexutil.Big{}
+	for _, backend := range srv.Backends() {
+		res, _ := backend.Forward(context.Background(), req)
+		str, ok := res.Result.(string)
+		if !ok {
+			return nil, errors.New("cannot fetch chainid on start")
+		}
+		chainId := new(hexutil.Big)
+		chainId.UnmarshalText([]byte(str))
+		chainIds = append(chainIds, chainId)
+	}
+
+	if len(chainIds) == 0 {
+		panic("cannot fetch remote chain id")
+	}
+	chainId := chainIds[0].ToInt()
+	for _, id := range chainIds {
+		if id.ToInt().Cmp(chainId) != 0 {
+			panic("mismatched chain ids detected")
+		}
+	}
+	log.Info("detected chain id", "value", chainId)
+	srv.chainId = chainId
 
 	if config.Metrics.Enabled {
 		addr := fmt.Sprintf("%s:%d", config.Metrics.Host, config.Metrics.Port)
@@ -258,95 +369,91 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// if the method is in the hash type map and
-	// the item in the params is a hash
-	if index, ok := hashMethods[req.Method]; ok {
-		// TODO: argTypes doesn't have all required entries
-		argType, ok := argTypes[req.Method]
-		if !ok {
-			// TODO: better error handling
-			fmt.Println("ERROR")
-			return
-		}
-
-		values, err := parsePositionalArguments(req.Params, argType)
-		if err != nil {
-			res := NewRPCErrorRes(nil, err)
-			writeRPCRes(ctx, w, res)
-			return
-		}
-		param, ok := values[index].Interface().(rpc.BlockNumberOrHash)
-		if !ok {
-			writeRPCError(ctx, w, nil, errors.New(""))
-			return
-		}
-		if _, ok := param.Hash(); ok {
-			backendRes := s.handleHashTaggedRPC(ctx, req)
-			writeRPCRes(ctx, w, backendRes)
-			return
-		}
-	}
-
-	// See if the incoming method is in the list of methods
-	// that need to be proxied by observing the request options
 	argType, ok := argTypes[req.Method]
 	if !ok {
-		// The request can be forwarded to the most recent node.
-		// TODO: finalize this functionality, because it could
-		// be forward to one of the two most recent nodes, if the
-		// most recent node doesn't start with a 0 blocknumber
-		// We haven't completely derisked the diff to geth it
-		// is to have non contiguous block data
-		if s.epoch6 == nil {
-			log.Error("Request for latest epoch cannot be handled")
-			writeRPCError(ctx, w, nil, errors.New("must configure epoch 6 url"))
-			return
-		}
-
-		backendRes, _ := s.epoch6.Forward(ctx, req)
-		writeRPCRes(ctx, w, backendRes)
+		writeRPCError(ctx, w, req.ID, ErrParseErr)
 		return
 	}
 
 	values, err := parsePositionalArguments(req.Params, argType)
 	if err != nil {
-		log.Error("Cannot parse JSON RPC arguments")
-		// TODO: unify the error res logic
-		// NewRPCErrorRes vs writeRPCError
-		res := NewRPCErrorRes(nil, err)
-		writeRPCRes(ctx, w, res)
+		writeRPCError(ctx, w, req.ID, fmt.Errorf("%w: %w", ErrParseErr, err))
 		return
 	}
 
-	// The final arg should be a *RequestOptions
-	finalArg := values[len(values)-1]
-	// Double check that it is the correct type
-	argument, ok := finalArg.Interface().(*RequestOptions)
+	argument, ok := parseRequestOptions(values)
 	if !ok {
-		writeRPCError(ctx, w, nil, errors.New("unknown rpc param"))
+		writeRPCError(ctx, w, req.ID, ErrParseErr)
 		return
 	}
 
-	// When the final argument is not passed, forward
-	// to the latest
-	if argument == nil {
-		if s.epoch6 == nil {
-			writeRPCError(ctx, w, nil, errors.New("must configure epoch 6 url"))
-			return
-		}
-
-		// TODO: this may need to go to 5 and 6 depending on a height
-		// if we decide to start epoch 6 at non zero block number
-		backendRes, _ := s.epoch6.Forward(ctx, req)
-		writeRPCRes(ctx, w, backendRes)
+	req, err = trimRequestOptions(req, values)
+	if err != nil {
+		writeRPCError(ctx, w, req.ID, ErrParseErr)
 		return
 	}
 
-	// If the epoch is not set, default to the latest
-	if argument.Epoch == nil {
-		argument.Epoch = &latestEpoch
+	var res *RPCRes
+	if s.isLatestEpochsRPC(argument) {
+		// Check to see if the request is meant to go for
+		// the latest epochs (5 or 6)
+		res = s.handleLatestEpochsRPC(ctx, req)
+	} else if s.isHashBasedRPC(values) {
+		// Check to see if a hash was passed in the rpc params
+		res = s.handleHashTaggedRPC(ctx, req)
+	} else {
+		res = s.handleEpochRPC(ctx, req, argument)
 	}
 
+	writeRPCRes(ctx, w, res)
+}
+
+func (s *DaisyChainServer) isLatestEpochsRPC(opts *RequestOptions) bool {
+	if opts == nil {
+		return true
+	}
+	if opts.Epoch == nil {
+		return true
+	}
+	if *opts.Epoch == 5 || *opts.Epoch == 6 {
+		return true
+	}
+	return false
+}
+
+func (s *DaisyChainServer) Backends() []*Backend {
+	backends := []*Backend{}
+	if s.epoch1 != nil {
+		backends = append(backends, s.epoch1)
+	}
+	if s.epoch2 != nil {
+		backends = append(backends, s.epoch2)
+	}
+	if s.epoch3 != nil {
+		backends = append(backends, s.epoch3)
+	}
+	if s.epoch4 != nil {
+		backends = append(backends, s.epoch4)
+	}
+	if s.epoch5 != nil {
+		backends = append(backends, s.epoch5)
+	}
+	if s.epoch6 != nil {
+		backends = append(backends, s.epoch6)
+	}
+	return backends
+}
+
+// TODO: need the blocknumbers to determine 5 or 6
+func (s *DaisyChainServer) handleLatestEpochsRPC(ctx context.Context, req *RPCReq) *RPCRes {
+	if s.epoch6 == nil {
+		return NewRPCErrorRes(req.ID, ErrInternal)
+	}
+	res, _ := s.epoch6.Forward(ctx, req)
+	return res
+}
+
+func (s *DaisyChainServer) handleEpochRPC(ctx context.Context, req *RPCReq, argument *RequestOptions) *RPCRes {
 	var backend *Backend
 	switch *argument.Epoch {
 	case 6:
@@ -362,27 +469,34 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 	case 1:
 		backend = s.epoch1
 	default:
-		writeRPCError(ctx, w, nil, errors.New("bad epoch"))
-		return
+		return NewRPCErrorRes(req.ID, ErrInternal)
 	}
 
+	// This should never happen
 	if backend == nil {
-		writeRPCError(ctx, w, nil, errors.New("epoch not configured"))
-		return
+		return NewRPCErrorRes(req.ID, ErrInternal)
 	}
 
-	// There should never be an empty params by this point
-	raw, err := json.Marshal(values[0 : len(values)-1])
+	res, err := backend.Forward(ctx, req)
 	if err != nil {
-		writeRPCError(ctx, w, nil, errors.New("cannot serialize json"))
-		return
+		return NewRPCErrorRes(req.ID, err)
 	}
+	return res
+}
 
-	log.Info("Sending rpc req", "backend", backend, "method", req.Method)
-
-	req.Params = raw
-	backendRes, _ := backend.Forward(ctx, req)
-	writeRPCRes(ctx, w, backendRes)
+func (s *DaisyChainServer) isHashBasedRPC(values []reflect.Value) bool {
+	for _, value := range values {
+		iface := value.Interface()
+		if param, ok := iface.(rpc.BlockNumberOrHash); ok {
+			if _, ok := param.Hash(); ok {
+				return true
+			}
+		}
+		if _, ok := iface.(common.Hash); ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *DaisyChainServer) RPCListenAndServe(host string, port int) error {
@@ -450,15 +564,7 @@ func (s *DaisyChainServer) populateContext(w http.ResponseWriter, r *http.Reques
 
 // Tries each rpc url one after another
 func (s *DaisyChainServer) handleHashTaggedRPC(ctx context.Context, req *RPCReq) *RPCRes {
-	backends := []*Backend{
-		s.epoch6,
-		s.epoch5,
-		s.epoch4,
-		s.epoch3,
-		s.epoch2,
-		s.epoch1,
-	}
-
+	backends := s.Backends()
 	var res *RPCRes
 	for _, backend := range backends {
 		res, _ = backend.Forward(ctx, req)
@@ -468,6 +574,17 @@ func (s *DaisyChainServer) handleHashTaggedRPC(ctx context.Context, req *RPCReq)
 	}
 	return res
 }
+
+func trimRequestOptions(req *RPCReq, values []reflect.Value) (*RPCReq, error) {
+	raw, err := json.Marshal(values[0 : len(values)-1])
+	if err != nil {
+		return nil, err
+	}
+	req.Params = raw
+	return req, nil
+}
+
+// TODO: move these helpers to their own file
 
 // parsePositionalArguments tries to parse the given args to an array of values with the
 // given types. It returns the parsed values or an error when the args could not be
@@ -518,6 +635,19 @@ func parseArgumentArray(dec *json.Decoder, types []reflect.Type) ([]reflect.Valu
 	// Read end of args array.
 	_, err := dec.Token()
 	return args, err
+}
+
+func parseRequestOptions(values []reflect.Value) (*RequestOptions, bool) {
+	requestOpts := values[len(values)-1]
+	argument, ok := requestOpts.Interface().(*RequestOptions)
+	if !ok {
+		return nil, false
+	}
+	// If the epoch is not set, default to the latest
+	if argument != nil && argument.Epoch == nil {
+		argument.Epoch = &latestEpoch
+	}
+	return argument, true
 }
 
 // TransactionArgs represents the arguments to construct a new transaction

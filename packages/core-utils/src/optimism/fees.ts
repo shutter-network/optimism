@@ -6,8 +6,8 @@ import { BigNumber } from 'ethers'
 
 import { remove0x } from '../common'
 
-const txDataZeroGas = 4
-const txDataNonZeroGasEIP2028 = 16
+export const txDataZeroGas = 4
+export const txDataNonZeroGasEIP2028 = 16
 const big10 = BigNumber.from(10)
 
 export const scaleDecimals = (
@@ -62,4 +62,12 @@ export const zeroesAndOnes = (data: Buffer | string): Array<number> => {
     }
   }
   return [zeros, ones]
+}
+
+// Compute the cost of calldata
+export const calldataCost = (data: Buffer | string): BigNumber => {
+  const [zeros, ones] = zeroesAndOnes(data)
+  const zeroCost = BigNumber.from(zeros).mul(txDataZeroGas)
+  const nonZeroCost = BigNumber.from(ones).mul(txDataNonZeroGasEIP2028)
+  return zeroCost.add(nonZeroCost)
 }

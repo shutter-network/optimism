@@ -47,6 +47,7 @@ import (
 	"github.com/ethereum-optimism/optimism/l2geth/rlp"
 	"github.com/ethereum-optimism/optimism/l2geth/rollup/rcfg"
 	"github.com/ethereum-optimism/optimism/l2geth/rpc"
+	"github.com/ethereum/go-ethereum"
 	"github.com/tyler-smith/go-bip39"
 )
 
@@ -780,8 +781,11 @@ func (s *PublicBlockChainAPI) GetBlockRange(ctx context.Context, startNumber rpc
 	// For each block in range, get block and append to array.
 	for number := startNumber; number <= endNumber; number++ {
 		block, err := s.GetBlockByNumber(ctx, number, fullTx)
-		if block == nil || err != nil {
+		if err != nil {
 			return nil, err
+		}
+		if block == nil {
+			return nil, ethereum.NotFound
 		}
 		blocks = append(blocks, block)
 	}

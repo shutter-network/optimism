@@ -78,6 +78,21 @@ type Config struct {
 	LogFormat         string              `toml:"log_format"`
 }
 
+func (c *Config) ResolveAuth() (map[string]string, error) {
+	var resolvedAuth map[string]string
+	if c.Authentication != nil {
+		resolvedAuth = make(map[string]string)
+		for secret, alias := range c.Authentication {
+			resolvedSecret, err := ReadFromEnvOrConfig(secret)
+			if err != nil {
+				return nil, err
+			}
+			resolvedAuth[resolvedSecret] = alias
+		}
+	}
+	return resolvedAuth, nil
+}
+
 func (c *Config) BuildBackends(lim RateLimiter) ([]string, map[string]*Backend, error) {
 	backendNames := make([]string, 0)
 	backendsByName := make(map[string]*Backend)

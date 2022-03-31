@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -118,7 +117,7 @@ func (s *Server) HandleHealthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) HandleRPC(w http.ResponseWriter, r *http.Request) {
-	ctx := s.populateContext(w, r)
+	ctx := populateContext(w, r, s.authenticatedPaths)
 	if ctx == nil {
 		return
 	}
@@ -184,7 +183,7 @@ func (s *Server) handleSingleRPC(ctx context.Context, req *RPCReq) (*RPCRes, boo
 }
 
 func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
-	ctx := s.populateContext(w, r)
+	ctx := populateContext(w, r, s.authenticatedPaths)
 	if ctx == nil {
 		return
 	}
@@ -217,50 +216,6 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	log.Info("accepted WS connection", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx))
-}
-
-func (s *Server) populateContext(w http.ResponseWriter, r *http.Request) context.Context {
-	vars := mux.Vars(r)
-	authorization := vars["authorization"]
-
-	if s.authenticatedPaths == nil {
-		// handle the edge case where auth is disabled
-		// but someone sends in an auth key anyway
-		if authorization != "" {
-			log.Info("blocked authenticated request against unauthenticated proxy")
-			httpResponseCodesTotal.WithLabelValues("404").Inc()
-			w.WriteHeader(404)
-			return nil
-		}
-		return context.WithValue(
-			r.Context(),
-			ContextKeyReqID, // nolint:staticcheck
-			randStr(10),
-		)
-	}
-
-	if authorization == "" || s.authenticatedPaths[authorization] == "" {
-		log.Info("blocked unauthorized request", "authorization", authorization)
-		httpResponseCodesTotal.WithLabelValues("401").Inc()
-		w.WriteHeader(401)
-		return nil
-	}
-
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff == "" {
-		ipPort := strings.Split(r.RemoteAddr, ":")
-		if len(ipPort) == 2 {
-			xff = ipPort[0]
-		}
-	}
-
-	ctx := context.WithValue(r.Context(), ContextKeyAuth, s.authenticatedPaths[authorization]) // nolint:staticcheck
-	ctx = context.WithValue(ctx, ContextKeyXForwardedFor, xff)                                 // nolint:staticcheck
-	return context.WithValue(
-		ctx,
-		ContextKeyReqID, // nolint:staticcheck
-		randStr(10),
-	)
 }
 
 func setCacheHeader(w http.ResponseWriter, cached bool) {

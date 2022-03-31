@@ -8,7 +8,6 @@ import (
 	"math/big"
 	"net/http"
 	"reflect"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -26,16 +25,17 @@ var (
 )
 
 type DaisyChainServer struct {
-	rpcServer   *http.Server
-	wsServer    *http.Server
-	maxBodySize int64
-	epoch1      *Backend
-	epoch2      *Backend
-	epoch3      *Backend
-	epoch4      *Backend
-	epoch5      *Backend
-	epoch6      *Backend
-	chainId     *big.Int
+	rpcServer          *http.Server
+	wsServer           *http.Server
+	maxBodySize        int64
+	authenticatedPaths map[string]string
+	epoch1             *Backend
+	epoch2             *Backend
+	epoch3             *Backend
+	epoch4             *Backend
+	epoch5             *Backend
+	epoch6             *Backend
+	chainId            *big.Int
 }
 
 // TODO: support "latest" for epoch
@@ -50,197 +50,16 @@ func ptr(n hexutil.Uint64) *hexutil.Uint64 {
 	return &n
 }
 
-// TODO: also add in debug methods
-var argTypes = map[string][]reflect.Type{
-	// PublicEthereumAPI
-	"eth_gasPrice": []reflect.Type{
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_maxPriorityFeePerGas": []reflect.Type{
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_feeHistory": []reflect.Type{
-		reflect.TypeOf(rpc.DecimalOrHex(0)),
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf([]float64{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_syncing": []reflect.Type{
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_chainId": []reflect.Type{
-		reflect.TypeOf(&RequestOptions{}),
-	},
-
-	// PublicBlockChainAPI
-	"eth_blockNumber": []reflect.Type{
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getBalance": []reflect.Type{
-		reflect.TypeOf(common.Address{}),
-		reflect.TypeOf(rpc.BlockNumberOrHash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getProof": []reflect.Type{
-		reflect.TypeOf(common.Address{}),
-		reflect.TypeOf([]string{}),
-		reflect.TypeOf(rpc.BlockNumberOrHash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getHeaderByNumber": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getHeaderByHash": []reflect.Type{
-		reflect.TypeOf(common.Hash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getBlockByNumber": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(true),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getBlockByHash": []reflect.Type{
-		reflect.TypeOf(common.Hash{}),
-		reflect.TypeOf(true),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getUncleByBlockNumberAndIndex": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(hexutil.Uint(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getUncleByBlockHashAndIndex": []reflect.Type{
-		reflect.TypeOf(common.Hash{}),
-		reflect.TypeOf(hexutil.Uint(0)),
-	},
-	"eth_getUncleCountByBlockNumber": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getUncleCountByBlockHash": []reflect.Type{},
-	"eth_getCode": []reflect.Type{
-		reflect.TypeOf(common.Address{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getStorageAt": []reflect.Type{
-		reflect.TypeOf(common.Address{}),
-		reflect.TypeOf(""),
-		reflect.TypeOf(rpc.BlockNumberOrHash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_call": []reflect.Type{
-		reflect.TypeOf(common.Address{}),
-		reflect.TypeOf(TransactionArgs{}),
-		reflect.TypeOf(rpc.BlockNumberOrHash{}),
-		reflect.TypeOf(&StateOverride{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_estimateGas": []reflect.Type{
-		reflect.TypeOf(TransactionArgs{}),
-		reflect.TypeOf(rpc.BlockNumberOrHash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_createAccessList": []reflect.Type{
-		reflect.TypeOf(TransactionArgs{}),
-		reflect.TypeOf(rpc.BlockNumberOrHash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-
-	// PublicTransactionPoolAPI
-	"eth_getBlockTransactionCountByNumber": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getBlockTransactionCountByHash": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getTransactionByBlockNumberAndIndex": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(hexutil.Uint(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getTransactionByBlockHashAndIndex": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(hexutil.Uint(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getRawTransactionByBlockNumberAndIndex": []reflect.Type{
-		reflect.TypeOf(rpc.BlockNumber(0)),
-		reflect.TypeOf(hexutil.Uint(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getRawTransactionByBlockHashAndIndex": []reflect.Type{
-		reflect.TypeOf(common.Hash{}),
-		reflect.TypeOf(hexutil.Uint(0)),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getTransactionCount": []reflect.Type{
-		reflect.TypeOf(common.Address{}),
-		reflect.TypeOf(rpc.BlockNumberOrHash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getTransactionByHash": []reflect.Type{
-		reflect.TypeOf(common.Hash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getRawTransactionByHash": []reflect.Type{
-		reflect.TypeOf(common.Hash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_getTransactionReceipt": []reflect.Type{
-		reflect.TypeOf(common.Hash{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_sendTransaction": []reflect.Type{
-		reflect.TypeOf(TransactionArgs{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_fillTransaction": []reflect.Type{
-		reflect.TypeOf(TransactionArgs{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_sendRawTransaction": []reflect.Type{
-		reflect.TypeOf(hexutil.Bytes{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_sign": []reflect.Type{
-		reflect.TypeOf(common.Address{}),
-		reflect.TypeOf(hexutil.Bytes{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_signTransaction": []reflect.Type{
-		reflect.TypeOf(TransactionArgs{}),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_pendingTransactions": []reflect.Type{
-		reflect.TypeOf(&RequestOptions{}),
-	},
-	"eth_resend": []reflect.Type{
-		reflect.TypeOf(TransactionArgs{}),
-		reflect.TypeOf(&hexutil.Big{}),
-		reflect.TypeOf(ptr(hexutil.Uint64(0))),
-		reflect.TypeOf(&RequestOptions{}),
-	},
-
-	// TODO: fill these out
-	// NewPublicTxPoolAPI
-	"txpool_content":     []reflect.Type{},
-	"txpool_contentFrom": []reflect.Type{},
-	"txpool_status":      []reflect.Type{},
-	"txpool_inspect":     []reflect.Type{},
-}
-
-func NewDaisyChainServer(backends map[string]*Backend, maxBodySize int64) *DaisyChainServer {
+func NewDaisyChainServer(backends map[string]*Backend, maxBodySize int64, authenticatedPaths map[string]string) *DaisyChainServer {
 	srv := DaisyChainServer{
-		epoch1:      backends["epoch1"],
-		epoch2:      backends["epoch2"],
-		epoch3:      backends["epoch3"],
-		epoch4:      backends["epoch4"],
-		epoch5:      backends["epoch5"],
-		epoch6:      backends["epoch6"],
-		maxBodySize: maxBodySize,
+		epoch1:             backends["epoch1"],
+		epoch2:             backends["epoch2"],
+		epoch3:             backends["epoch3"],
+		epoch4:             backends["epoch4"],
+		epoch5:             backends["epoch5"],
+		epoch6:             backends["epoch6"],
+		maxBodySize:        maxBodySize,
+		authenticatedPaths: authenticatedPaths,
 	}
 	return &srv
 }
@@ -259,10 +78,17 @@ func StartDaisyChain(config *Config) (func(), error) {
 		return nil, err
 	}
 
+	resolvedAuth, err := config.ResolveAuth()
+	if err != nil {
+		return nil, err
+	}
+
 	// parse the config
 	srv := NewDaisyChainServer(
 		backendsByName,
 		config.Server.MaxBodySizeBytes,
+		resolvedAuth,
+	//authenticatedPaths map[string]string,
 	)
 
 	// send a chain id request to each node to ensure they are on the same chain
@@ -341,7 +167,7 @@ func StartDaisyChain(config *Config) (func(), error) {
 }
 
 func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
-	ctx := s.populateContext(w, r)
+	ctx := populateContext(w, r, s.authenticatedPaths)
 	if ctx == nil {
 		return
 	}
@@ -518,24 +344,7 @@ func (s *DaisyChainServer) Shutdown() {
 }
 
 func (s *DaisyChainServer) HandleHealthz(w http.ResponseWriter, r *http.Request) {
-	_ = w.Write([]byte("OK"))
-}
-
-func (s *DaisyChainServer) populateContext(w http.ResponseWriter, r *http.Request) context.Context {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff == "" {
-		ipPort := strings.Split(r.RemoteAddr, ":")
-		if len(ipPort) == 2 {
-			xff = ipPort[0]
-		}
-	}
-
-	ctx := context.WithValue(r.Context(), ContextKeyXForwardedFor, xff)
-	return context.WithValue(
-		ctx,
-		ContextKeyReqID,
-		randStr(10),
-	)
+	_, _ = w.Write([]byte("OK"))
 }
 
 // Tries each rpc url one after another

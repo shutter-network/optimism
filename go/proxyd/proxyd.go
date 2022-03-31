@@ -91,17 +91,9 @@ func Start(config *Config) (func(), error) {
 		}
 	}
 
-	var resolvedAuth map[string]string
-
-	if config.Authentication != nil {
-		resolvedAuth = make(map[string]string)
-		for secret, alias := range config.Authentication {
-			resolvedSecret, err := ReadFromEnvOrConfig(secret)
-			if err != nil {
-				return nil, err
-			}
-			resolvedAuth[resolvedSecret] = alias
-		}
+	resolvedAuth, err := config.ResolveAuth()
+	if err != nil {
+		return nil, err
 	}
 
 	var (

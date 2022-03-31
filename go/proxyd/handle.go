@@ -5,8 +5,10 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/gorilla/mux"
 )
 
 func handleRPC(ctx context.Context, w http.ResponseWriter, r *http.Request, maxBodySize int64, doRequest func(context.Context, *RPCReq) (*RPCRes, bool)) {
@@ -77,4 +79,48 @@ func handleRPC(ctx context.Context, w http.ResponseWriter, r *http.Request, maxB
 	backendRes, cached := doRequest(ctx, req)
 	setCacheHeader(w, cached)
 	writeRPCRes(ctx, w, backendRes)
+}
+
+func populateContext(w http.ResponseWriter, r *http.Request, authenticatedPaths map[string]string) context.Context {
+	vars := mux.Vars(r)
+	authorization := vars["authorization"]
+
+	if authenticatedPaths == nil {
+		// handle the edge case where auth is disabled
+		// but someone sends in an auth key anyway
+		if authorization != "" {
+			log.Info("blocked authenticated request against unauthenticated proxy")
+			httpResponseCodesTotal.WithLabelValues("404").Inc()
+			w.WriteHeader(404)
+			return nil
+		}
+		return context.WithValue(
+			r.Context(),
+			ContextKeyReqID, // nolint:staticcheck
+			randStr(10),
+		)
+	}
+
+	if authorization == "" || authenticatedPaths[authorization] == "" {
+		log.Info("blocked unauthorized request", "authorization", authorization)
+		httpResponseCodesTotal.WithLabelValues("401").Inc()
+		w.WriteHeader(401)
+		return nil
+	}
+
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff == "" {
+		ipPort := strings.Split(r.RemoteAddr, ":")
+		if len(ipPort) == 2 {
+			xff = ipPort[0]
+		}
+	}
+
+	ctx := context.WithValue(r.Context(), ContextKeyAuth, authenticatedPaths[authorization]) // nolint:staticcheck
+	ctx = context.WithValue(ctx, ContextKeyXForwardedFor, xff)                               // nolint:staticcheck
+	return context.WithValue(
+		ctx,
+		ContextKeyReqID, // nolint:staticcheck
+		randStr(10),
+	)
 }

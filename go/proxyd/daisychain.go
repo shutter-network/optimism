@@ -275,7 +275,7 @@ func StartDaisyChain(config *Config) (func(), error) {
 			return nil, errors.New("cannot fetch chainid on start")
 		}
 		chainId := new(hexutil.Big)
-		chainId.UnmarshalText([]byte(str))
+		_ = chainId.UnmarshalText([]byte(str))
 		chainIds = append(chainIds, chainId)
 	}
 
@@ -285,7 +285,7 @@ func StartDaisyChain(config *Config) (func(), error) {
 	chainId := chainIds[0].ToInt()
 	for _, id := range chainIds {
 		if id.ToInt().Cmp(chainId) != 0 {
-			panic("mismatched chain ids detected")
+			log.Crit("mismatched chain ids detected", "chain-id", chainId, "other", id)
 		}
 	}
 	log.Info("detected chain id", "value", chainId)
@@ -294,7 +294,11 @@ func StartDaisyChain(config *Config) (func(), error) {
 	if config.Metrics.Enabled {
 		addr := fmt.Sprintf("%s:%d", config.Metrics.Host, config.Metrics.Port)
 		log.Info("starting metrics server", "addr", addr)
-		go http.ListenAndServe(addr, promhttp.Handler())
+		go func() {
+			if err := http.ListenAndServe(addr, promhttp.Handler()); err != nil {
+				log.Error("error starting metrics server", "err", err)
+			}
+		}()
 	}
 
 	// To allow integration tests to cleanly come up, wait
@@ -506,15 +510,15 @@ func (s *DaisyChainServer) WSListenAndServe(host string, port int) error {
 
 func (s *DaisyChainServer) Shutdown() {
 	if s.rpcServer != nil {
-		s.rpcServer.Shutdown(context.Background())
+		_ = s.rpcServer.Shutdown(context.Background())
 	}
 	if s.wsServer != nil {
-		s.wsServer.Shutdown(context.Background())
+		_ = s.wsServer.Shutdown(context.Background())
 	}
 }
 
 func (s *DaisyChainServer) HandleHealthz(w http.ResponseWriter, r *http.Request) {
-	w.Write([]byte("OK"))
+	_ = w.Write([]byte("OK"))
 }
 
 func (s *DaisyChainServer) populateContext(w http.ResponseWriter, r *http.Request) context.Context {

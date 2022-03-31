@@ -45,7 +45,7 @@ func handleRPC(ctx context.Context, w http.ResponseWriter, r *http.Request, maxB
 			return
 		}
 
-		batchRes := make([]*RPCRes, len(reqs), len(reqs))
+		batchRes := make([]*RPCRes, len(reqs))
 		var batchContainsCached bool
 		for i := 0; i < len(reqs); i++ {
 			req, err := ParseRPCReq(reqs[i])

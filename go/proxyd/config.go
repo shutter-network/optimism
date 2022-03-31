@@ -149,7 +149,7 @@ func (c *Config) BuildBackends(lim RateLimiter) ([]string, map[string]*Backend, 
 
 func (c *Config) ValidateDaisyChainBackends() error {
 	valid := false
-	for name, _ := range c.Backends {
+	for name := range c.Backends {
 		switch name {
 		case "epoch1", "epoch2", "epoch3", "epoch4", "epoch5", "epoch6":
 			valid = true

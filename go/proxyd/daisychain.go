@@ -1,13 +1,10 @@
 package proxyd
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"io/ioutil"
 	"math/big"
 	"net/http"
 	"reflect"
@@ -16,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gorilla/mux"
@@ -340,72 +336,48 @@ func StartDaisyChain(config *Config) (func(), error) {
 	}, nil
 }
 
-// TODO: batch support
 func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 	ctx := s.populateContext(w, r)
 	if ctx == nil {
 		return
 	}
 
-	log.Info(
-		"received RPC request",
-		"req_id", GetReqID(ctx),
-		"auth", GetAuthCtx(ctx),
-		"user_agent", r.Header.Get("user-agent"),
-	)
+	doRequest := func(ctx context.Context, req *RPCReq) (*RPCRes, bool) {
+		argType, ok := argTypes[req.Method]
+		if !ok {
+			return NewRPCErrorRes(req.ID, ErrParseErr), false
+		}
 
-	body, err := ioutil.ReadAll(io.LimitReader(r.Body, s.maxBodySize))
-	if err != nil {
-		log.Error("error reading request body", "err", err)
-		writeRPCError(ctx, w, nil, ErrInternal)
-		return
-	}
-	RecordRequestPayloadSize(ctx, len(body))
+		values, err := parsePositionalArguments(req.Params, argType)
+		if err != nil {
+			return NewRPCErrorRes(req.ID, fmt.Errorf("%s: %w", ErrParseErr, err)), false
+		}
 
-	req, err := ParseRPCReq(body)
-	if err != nil {
-		log.Info("error parsing RPC call", "source", "rpc", "err", err)
-		writeRPCError(ctx, w, nil, err)
-		return
-	}
+		argument, ok := parseRequestOptions(values)
+		if !ok {
+			return NewRPCErrorRes(req.ID, ErrParseErr), false
+		}
 
-	argType, ok := argTypes[req.Method]
-	if !ok {
-		writeRPCError(ctx, w, req.ID, ErrParseErr)
-		return
-	}
+		req, err = trimRequestOptions(req, values)
+		if err != nil {
+			return NewRPCErrorRes(req.ID, ErrParseErr), false
+		}
 
-	values, err := parsePositionalArguments(req.Params, argType)
-	if err != nil {
-		writeRPCError(ctx, w, req.ID, fmt.Errorf("%w: %w", ErrParseErr, err))
-		return
-	}
-
-	argument, ok := parseRequestOptions(values)
-	if !ok {
-		writeRPCError(ctx, w, req.ID, ErrParseErr)
-		return
+		var res *RPCRes
+		if s.isLatestEpochsRPC(argument) {
+			// Check to see if the request is meant to go for
+			// the latest epochs (5 or 6)
+			res = s.handleLatestEpochsRPC(ctx, req)
+		} else if s.isHashBasedRPC(values) {
+			// Check to see if a hash was passed in the rpc params
+			res = s.handleHashTaggedRPC(ctx, req)
+		} else {
+			res = s.handleEpochRPC(ctx, req, argument)
+		}
+		return res, false
 	}
 
-	req, err = trimRequestOptions(req, values)
-	if err != nil {
-		writeRPCError(ctx, w, req.ID, ErrParseErr)
-		return
-	}
-
-	var res *RPCRes
-	if s.isLatestEpochsRPC(argument) {
-		// Check to see if the request is meant to go for
-		// the latest epochs (5 or 6)
-		res = s.handleLatestEpochsRPC(ctx, req)
-	} else if s.isHashBasedRPC(values) {
-		// Check to see if a hash was passed in the rpc params
-		res = s.handleHashTaggedRPC(ctx, req)
-	} else {
-		res = s.handleEpochRPC(ctx, req, argument)
-	}
-
-	writeRPCRes(ctx, w, res)
+	handleRPC(ctx, w, r, s.maxBodySize, doRequest)
 }
 
 func (s *DaisyChainServer) isLatestEpochsRPC(opts *RequestOptions) bool {
@@ -584,59 +556,6 @@ func trimRequestOptions(req *RPCReq, values []reflect.Value) (*RPCReq, error) {
 	return req, nil
 }
 
-// TODO: move these helpers to their own file
-
-// parsePositionalArguments tries to parse the given args to an array of values with the
-// given types. It returns the parsed values or an error when the args could not be
-// parsed. Missing optional arguments are returned as reflect.Zero values.
-func parsePositionalArguments(rawArgs json.RawMessage, types []reflect.Type) ([]reflect.Value, error) {
-	dec := json.NewDecoder(bytes.NewReader(rawArgs))
-	var args []reflect.Value
-	tok, err := dec.Token()
-	switch {
-	case err == io.EOF || tok == nil && err == nil:
-		// "params" is optional and may be empty. Also allow "params":null even though it's
-		// not in the spec because our own client used to send it.
-	case err != nil:
-		return nil, err
-	case tok == json.Delim('['):
-		// Read argument array.
-		if args, err = parseArgumentArray(dec, types); err != nil {
-			return nil, err
-		}
-	default:
-		return nil, errors.New("non-array args")
-	}
-	// Set any missing args to nil.
-	for i := len(args); i < len(types); i++ {
-		if types[i].Kind() != reflect.Ptr {
-			return nil, fmt.Errorf("missing value for required argument %d", i)
-		}
-		args = append(args, reflect.Zero(types[i]))
-	}
-	return args, nil
-}
-
-func parseArgumentArray(dec *json.Decoder, types []reflect.Type) ([]reflect.Value, error) {
-	args := make([]reflect.Value, 0, len(types))
-	for i := 0; dec.More(); i++ {
-		if i >= len(types) {
-			return args, fmt.Errorf("too many arguments, want at most %d", len(types))
-		}
-		argval := reflect.New(types[i])
-		if err := dec.Decode(argval.Interface()); err != nil {
-			return args, fmt.Errorf("invalid argument %d: %v", i, err)
-		}
-		if argval.IsNil() && types[i].Kind() != reflect.Ptr {
-			return args, fmt.Errorf("missing value for required argument %d", i)
-		}
-		args = append(args, argval.Elem())
-	}
-	// Read end of args array.
-	_, err := dec.Token()
-	return args, err
-}
-
 func parseRequestOptions(values []reflect.Value) (*RequestOptions, bool) {
 	requestOpts := values[len(values)-1]
 	argument, ok := requestOpts.Interface().(*RequestOptions)
@@ -649,43 +568,3 @@ func parseRequestOptions(values []reflect.Value) (*RequestOptions, bool) {
 	}
 	return argument, true
 }
-
-// TransactionArgs represents the arguments to construct a new transaction
-// or a message call.
-type TransactionArgs struct {
-	From                 *common.Address `json:"from"`
-	To                   *common.Address `json:"to"`
-	Gas                  *hexutil.Uint64 `json:"gas"`
-	GasPrice             *hexutil.Big    `json:"gasPrice"`
-	MaxFeePerGas         *hexutil.Big    `json:"maxFeePerGas"`
-	MaxPriorityFeePerGas *hexutil.Big    `json:"maxPriorityFeePerGas"`
-	Value                *hexutil.Big    `json:"value"`
-	Nonce                *hexutil.Uint64 `json:"nonce"`
-
-	// We accept "data" and "input" for backwards-compatibility reasons.
-	// "input" is the newer name and should be preferred by clients.
-	// Issue detail: https://github.com/ethereum/go-ethereum/issues/15628
-	Data  *hexutil.Bytes `json:"data"`
-	Input *hexutil.Bytes `json:"input"`
-
-	// Introduced by AccessListTxType transaction.
-	AccessList *types.AccessList `json:"accessList,omitempty"`
-	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
-}
-
-// OverrideAccount indicates the overriding fields of account during the execution
-// of a message call.
-// Note, state and stateDiff can't be specified at the same time. If state is
-// set, message execution will only use the data in the given state. Otherwise
-// if statDiff is set, all diff will be applied first and then execute the call
-// message.
-type OverrideAccount struct {
-	Nonce     *hexutil.Uint64              `json:"nonce"`
-	Code      *hexutil.Bytes               `json:"code"`
-	Balance   **hexutil.Big                `json:"balance"`
-	State     *map[common.Hash]common.Hash `json:"state"`
-	StateDiff *map[common.Hash]common.Hash `json:"stateDiff"`
-}
-
-// StateOverride is the collection of overridden accounts.
-type StateOverride map[common.Address]OverrideAccount

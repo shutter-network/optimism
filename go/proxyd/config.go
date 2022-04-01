@@ -3,6 +3,7 @@ package proxyd
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"strings"
 
@@ -63,6 +64,11 @@ type BackendGroupsConfig map[string]*BackendGroupConfig
 
 type MethodMappingsConfig map[string]string
 
+type EthConfig struct {
+	L2ChainID          *big.Int `toml:"l2_chain_id"`
+	BedrockCutoffBlock *big.Int `toml:"bedrock_cutoff_block"`
+}
+
 type Config struct {
 	WSBackendGroup    string              `toml:"ws_backend_group"`
 	Server            ServerConfig        `toml:"server"`
@@ -75,6 +81,7 @@ type Config struct {
 	BackendGroups     BackendGroupsConfig `toml:"backend_groups"`
 	RPCMethodMappings map[string]string   `toml:"rpc_method_mappings"`
 	WSMethodWhitelist []string            `toml:"ws_method_whitelist"`
+	Eth               EthConfig           `toml:"eth_config"`
 	LogFormat         string              `toml:"log_format"`
 }
 

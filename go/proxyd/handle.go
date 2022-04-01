@@ -81,6 +81,26 @@ func handleRPC(ctx context.Context, w http.ResponseWriter, r *http.Request, maxB
 	writeRPCRes(ctx, w, backendRes)
 }
 
+func handleWS(ctx context.Context, w http.ResponseWriter, r *http.Request, getProxier func() (*WSProxier, error)) {
+	log.Info("received WS connection", "req_id", GetReqID(ctx))
+
+	proxier, err := getProxier()
+	if err != nil {
+		return
+	}
+
+	activeClientWsConnsGauge.WithLabelValues(GetAuthCtx(ctx)).Inc()
+	go func() {
+		// Below call blocks so run it in a goroutine.
+		if err := proxier.Proxy(ctx); err != nil {
+			log.Error("error proxying websocket", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx), "err", err)
+		}
+		activeClientWsConnsGauge.WithLabelValues(GetAuthCtx(ctx)).Dec()
+	}()
+
+	log.Info("accepted WS connection", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx))
+}
+
 func populateContext(w http.ResponseWriter, r *http.Request, authenticatedPaths map[string]string) context.Context {
 	vars := mux.Vars(r)
 	authorization := vars["authorization"]

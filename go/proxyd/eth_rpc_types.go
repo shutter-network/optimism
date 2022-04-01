@@ -9,6 +9,10 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
+func ptr[T any](n T) *T {
+	return &n
+}
+
 // TODO: also add in debug methods
 var argTypes = map[string][]reflect.Type{
 	// PublicEthereumAPI

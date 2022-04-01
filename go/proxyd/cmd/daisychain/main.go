@@ -16,19 +16,18 @@ var (
 	GitDate    = ""
 )
 
-func main() {
+func init() {
 	// Set up logger with a default INFO level in case we fail to parse flags.
 	// Otherwise the final critical log won't show what the parsing error was.
-
-	// TODO: is there a clean way to be able to configure the logformat?
-
 	log.Root().SetHandler(
 		log.LvlFilterHandler(
 			log.LvlInfo,
 			log.StreamHandler(os.Stdout, log.JSONFormat()),
 		),
 	)
+}
 
+func main() {
 	log.Info("starting daisychain", "version", GitVersion, "commit", GitCommit, "date", GitDate)
 
 	if len(os.Args) < 2 {

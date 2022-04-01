@@ -188,34 +188,26 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Info("received WS connection", "req_id", GetReqID(ctx))
+	getProxier := func() (*WSProxier, error) {
+		clientConn, err := s.upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			log.Error("error upgrading client conn", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx), "err", err)
+			return nil, err
+		}
 
-	clientConn, err := s.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Error("error upgrading client conn", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx), "err", err)
-		return
+		proxier, err := s.wsBackendGroup.ProxyWS(ctx, clientConn, s.wsMethodWhitelist)
+		if err != nil {
+			if errors.Is(err, ErrNoBackends) {
+				RecordUnserviceableRequest(ctx, RPCRequestSourceWS)
+			}
+			log.Error("error dialing ws backend", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx), "err", err)
+			clientConn.Close()
+			return nil, err
+		}
+		return proxier, nil
 	}
 
-	proxier, err := s.wsBackendGroup.ProxyWS(ctx, clientConn, s.wsMethodWhitelist)
-	if err != nil {
-		if errors.Is(err, ErrNoBackends) {
-			RecordUnserviceableRequest(ctx, RPCRequestSourceWS)
-		}
-		log.Error("error dialing ws backend", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx), "err", err)
-		clientConn.Close()
-		return
-	}
-
-	activeClientWsConnsGauge.WithLabelValues(GetAuthCtx(ctx)).Inc()
-	go func() {
-		// Below call blocks so run it in a goroutine.
-		if err := proxier.Proxy(ctx); err != nil {
-			log.Error("error proxying websocket", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx), "err", err)
-		}
-		activeClientWsConnsGauge.WithLabelValues(GetAuthCtx(ctx)).Dec()
-	}()
-
-	log.Info("accepted WS connection", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx))
+	handleWS(ctx, w, r, getProxier)
 }
 
 func setCacheHeader(w http.ResponseWriter, cached bool) {

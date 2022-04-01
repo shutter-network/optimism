@@ -15,18 +15,20 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gorilla/mux"
+	"github.com/gorilla/websocket"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/cors"
 )
 
 var (
+	// Represents the chain id for the Optimism L2 mainnet
 	MainnetChainId = big.NewInt(10)
-	KovanChainId   = big.NewInt(69)
+	// Represents the chain id for the Optimism L2 public testnet
+	KovanChainId = big.NewInt(69)
 )
 
 type DaisyChainServer struct {
 	rpcServer          *http.Server
-	wsServer           *http.Server
 	maxBodySize        int64
 	authenticatedPaths map[string]string
 	epoch1             *Backend
@@ -35,22 +37,24 @@ type DaisyChainServer struct {
 	epoch4             *Backend
 	epoch5             *Backend
 	epoch6             *Backend
-	chainId            *big.Int
+	bedrockCutoffBlock *big.Int
+	l2ChainID          *big.Int
+	upgrader           *websocket.Upgrader
 }
 
-// TODO: support "latest" for epoch
 type RequestOptions struct {
 	Epoch *uint `json:"epoch,omitempty"`
 }
 
 var latestEpoch = uint(6)
 
-// TODO: make this generic
-func ptr(n hexutil.Uint64) *hexutil.Uint64 {
-	return &n
-}
-
-func NewDaisyChainServer(backends map[string]*Backend, maxBodySize int64, authenticatedPaths map[string]string) *DaisyChainServer {
+func NewDaisyChainServer(
+	backends map[string]*Backend,
+	maxBodySize int64,
+	authenticatedPaths map[string]string,
+	l2ChainID *big.Int,
+	bedrockCutoffBlock *big.Int,
+) *DaisyChainServer {
 	srv := DaisyChainServer{
 		epoch1:             backends["epoch1"],
 		epoch2:             backends["epoch2"],
@@ -60,6 +64,11 @@ func NewDaisyChainServer(backends map[string]*Backend, maxBodySize int64, authen
 		epoch6:             backends["epoch6"],
 		maxBodySize:        maxBodySize,
 		authenticatedPaths: authenticatedPaths,
+		bedrockCutoffBlock: bedrockCutoffBlock,
+		l2ChainID:          l2ChainID,
+		upgrader: &websocket.Upgrader{
+			HandshakeTimeout: 5 * time.Second,
+		},
 	}
 	return &srv
 }
@@ -69,9 +78,6 @@ func StartDaisyChain(config *Config) (func(), error) {
 		return nil, err
 	}
 
-	// TODO: figure out how to not need to pass
-	// in the rate limiter here by parsing the
-	// args in the config and creating it in there
 	lim := NewLocalRateLimiter()
 	_, backendsByName, err := config.BuildBackends(lim)
 	if err != nil {
@@ -88,7 +94,8 @@ func StartDaisyChain(config *Config) (func(), error) {
 		backendsByName,
 		config.Server.MaxBodySizeBytes,
 		resolvedAuth,
-	//authenticatedPaths map[string]string,
+		config.Eth.L2ChainID,
+		config.Eth.BedrockCutoffBlock,
 	)
 
 	// send a chain id request to each node to ensure they are on the same chain
@@ -101,7 +108,10 @@ func StartDaisyChain(config *Config) (func(), error) {
 			return nil, errors.New("cannot fetch chainid on start")
 		}
 		chainId := new(hexutil.Big)
-		_ = chainId.UnmarshalText([]byte(str))
+		err := chainId.UnmarshalText([]byte(str))
+		if err != nil {
+			return nil, err
+		}
 		chainIds = append(chainIds, chainId)
 	}
 
@@ -115,7 +125,31 @@ func StartDaisyChain(config *Config) (func(), error) {
 		}
 	}
 	log.Info("detected chain id", "value", chainId)
-	srv.chainId = chainId
+	if srv.l2ChainID != nil {
+		fmt.Println("chainid not nil")
+		if srv.l2ChainID.Cmp(chainId) != 0 {
+			return nil, fmt.Errorf("mismatched chainids: expected %d, got %d", srv.l2ChainID, chainId)
+		}
+	}
+	srv.l2ChainID = chainId
+
+	if srv.l2ChainID.Cmp(MainnetChainId) == 0 {
+		log.Info("running on mainnet")
+		// TODO(tynes): check and set the mainnet cutoff block
+		// srv.bedrockCutoffBlock = ...
+	}
+	if srv.l2ChainID.Cmp(KovanChainId) == 0 {
+		log.Info("running on kovan")
+		// TODO(tynes): check and set the kovan cutoff block
+		// srv.bedrockCutoffBlock = ...
+	}
+
+	if srv.bedrockCutoffBlock == nil {
+		log.Info("bedrock cutoff block not detected, all requests routing to latest")
+		srv.bedrockCutoffBlock = new(big.Int)
+	} else {
+		log.Info("bedrock cutoff block", "number", srv.bedrockCutoffBlock)
+	}
 
 	if config.Metrics.Enabled {
 		addr := fmt.Sprintf("%s:%d", config.Metrics.Host, config.Metrics.Port)
@@ -140,18 +174,6 @@ func StartDaisyChain(config *Config) (func(), error) {
 					return
 				}
 				log.Crit("error starting RPC server", "err", err)
-			}
-		}()
-	}
-
-	if config.Server.WSPort != 0 {
-		go func() {
-			if err := srv.WSListenAndServe(config.Server.WSHost, config.Server.WSPort); err != nil {
-				if errors.Is(err, http.ErrServerClosed) {
-					log.Info("WS server shut down")
-					return
-				}
-				log.Crit("error starting WS server", "err", err)
 			}
 		}()
 	}
@@ -197,7 +219,7 @@ func (s *DaisyChainServer) HandleRPC(w http.ResponseWriter, r *http.Request) {
 		if s.isLatestEpochsRPC(argument) {
 			// Check to see if the request is meant to go for
 			// the latest epochs (5 or 6)
-			res = s.handleLatestEpochsRPC(ctx, req)
+			res = s.handleLatestEpochsRPC(ctx, req, values)
 		} else if s.isHashBasedRPC(values) {
 			// Check to see if a hash was passed in the rpc params
 			res = s.handleHashTaggedRPC(ctx, req)
@@ -246,12 +268,21 @@ func (s *DaisyChainServer) Backends() []*Backend {
 	return backends
 }
 
-// TODO: need the blocknumbers to determine 5 or 6
-func (s *DaisyChainServer) handleLatestEpochsRPC(ctx context.Context, req *RPCReq) *RPCRes {
-	if s.epoch6 == nil {
+// TODO: handle eth_getLogs across the cutoff point
+func (s *DaisyChainServer) handleLatestEpochsRPC(ctx context.Context, req *RPCReq, values []reflect.Value) *RPCRes {
+	backend := s.epoch6
+	if num, ok := s.isNumberBasedRPC(values); ok {
+		// TODO: can get away without using big math here
+		if num.Cmp(s.bedrockCutoffBlock) < 1 {
+			backend = s.epoch5
+		}
+	}
+
+	if backend == nil {
+		log.Trace("attempting to query unconfigured backend")
 		return NewRPCErrorRes(req.ID, ErrInternal)
 	}
-	res, _ := s.epoch6.Forward(ctx, req)
+	res, _ := backend.Forward(ctx, req)
 	return res
 }
 
@@ -276,6 +307,7 @@ func (s *DaisyChainServer) handleEpochRPC(ctx context.Context, req *RPCReq, argu
 
 	// This should never happen
 	if backend == nil {
+		log.Trace("attempting to query unconfigured backend")
 		return NewRPCErrorRes(req.ID, ErrInternal)
 	}
 
@@ -286,6 +318,8 @@ func (s *DaisyChainServer) handleEpochRPC(ctx context.Context, req *RPCReq, argu
 	return res
 }
 
+// TODO: perhaps the better approach is to attempt to classify the request
+// up front and then have an enum in a switch statement
 func (s *DaisyChainServer) isHashBasedRPC(values []reflect.Value) bool {
 	for _, value := range values {
 		iface := value.Interface()
@@ -299,6 +333,21 @@ func (s *DaisyChainServer) isHashBasedRPC(values []reflect.Value) bool {
 		}
 	}
 	return false
+}
+
+func (s *DaisyChainServer) isNumberBasedRPC(values []reflect.Value) (*big.Int, bool) {
+	for _, value := range values {
+		iface := value.Interface()
+		if param, ok := iface.(rpc.BlockNumberOrHash); ok {
+			if num, ok := param.Number(); ok {
+				return new(big.Int).SetInt64(num.Int64()), true
+			}
+		}
+		if num, ok := iface.(rpc.BlockNumber); ok {
+			return new(big.Int).SetInt64(num.Int64()), true
+		}
+	}
+	return nil, false
 }
 
 func (s *DaisyChainServer) RPCListenAndServe(host string, port int) error {
@@ -317,29 +366,9 @@ func (s *DaisyChainServer) RPCListenAndServe(host string, port int) error {
 	return s.rpcServer.ListenAndServe()
 }
 
-func (s *DaisyChainServer) WSListenAndServe(host string, port int) error {
-	hdlr := mux.NewRouter()
-	hdlr.HandleFunc("/healthz", s.HandleHealthz).Methods("GET")
-	// TODO: fix
-	//hdlr.HandleFunc("/", s.HandleWS)
-	c := cors.New(cors.Options{
-		AllowedOrigins: []string{"*"},
-	})
-	addr := fmt.Sprintf("%s:%d", host, port)
-	s.wsServer = &http.Server{
-		Handler: instrumentedHdlr(c.Handler(hdlr)),
-		Addr:    addr,
-	}
-	log.Info("starting WS server", "addr", addr)
-	return s.wsServer.ListenAndServe()
-}
-
 func (s *DaisyChainServer) Shutdown() {
 	if s.rpcServer != nil {
 		_ = s.rpcServer.Shutdown(context.Background())
-	}
-	if s.wsServer != nil {
-		_ = s.wsServer.Shutdown(context.Background())
 	}
 }
 

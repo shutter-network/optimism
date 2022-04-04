@@ -1949,6 +1949,38 @@ func (api *PrivateRollupAPI) SetL2GasPrice(ctx context.Context, gasPrice hexutil
 	return api.b.SetL2GasPrice(ctx, (*big.Int)(&gasPrice))
 }
 
+// PrivateCollatorAPI provides private RPC methods for the collator to control the sequencer.
+// These methods can be abused by external users and must be considered insecure for use by untrusted users.
+type PrivateCollatorAPI struct {
+	b Backend
+}
+
+// NewPrivateCollatorAPI creates a new API definition for the shutter methods of the Ethereum
+// service. It is intended to be used by the collator.
+func NewPrivateCollatorAPI(b Backend) *PrivateCollatorAPI {
+	return &PrivateCollatorAPI{b: b}
+}
+
+// SubmitShutterBatch submits a shutter batch in form of a transaction to the rollup in order to
+// append it to the chain.
+func (api *PrivateCollatorAPI) SubmitShutterBatch(ctx context.Context, encodedBatchTx hexutil.Bytes) error {
+	batchTx := new(types.Transaction)
+	if err := rlp.DecodeBytes(encodedBatchTx, batchTx); err != nil {
+		return err
+	}
+	// TODO: when Optimism supports EIP-2718, decode as typed tx and check that type is correct
+
+	if api.b.IsSyncing() {
+		return errors.New("cannot send shutter batch while syncing")
+	}
+
+	if api.b.IsVerifier() {
+		return errors.New("cannot send shutter batch to verifier node")
+	}
+
+	return api.b.SendTx(ctx, batchTx)
+}
+
 // PublicDebugAPI is the collection of Ethereum APIs exposed over the public
 // debugging endpoint.
 type PublicDebugAPI struct {

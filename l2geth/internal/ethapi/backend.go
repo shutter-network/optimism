@@ -127,6 +127,10 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Version:   "1.0",
 			Service:   NewPrivateRollupAPI(apiBackend),
 		}, {
+			Namespace: "collator",
+			Version:   "1.0",
+			Service:   NewPrivateCollatorAPI(apiBackend),
+		}, {
 			Namespace: "txpool",
 			Version:   "1.0",
 			Service:   NewPublicTxPoolAPI(apiBackend),

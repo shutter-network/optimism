@@ -18,6 +18,7 @@
         pkgs.golangci-lint
         pkgs.docker
         pkgs.nodePackages.pnpm
+        pkgs.python311
       ];
     }
   ];

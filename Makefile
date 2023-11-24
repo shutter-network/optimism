@@ -9,7 +9,7 @@ PYTHON?=python3
 build: build-go build-ts
 .PHONY: build
 
-build-go: submodules op-node op-proposer op-batcher
+build-go: submodules op-node op-proposer op-batcher shutter-node
 .PHONY: build-go
 
 lint-go:
@@ -79,6 +79,10 @@ cannon:
 	make -C ./cannon cannon
 .PHONY: cannon
 
+shutter-node:
+	make -C ./shutter-node shutter-node
+.PHONY: shutter-node
+
 cannon-prestate: op-program cannon
 	./cannon/bin/cannon load-elf --path op-program/bin/op-program-client.elf --out op-program/bin/prestate.json --meta op-program/bin/meta.json
 	./cannon/bin/cannon run --proof-at '=0' --stop-at '=1' --input op-program/bin/prestate.json --meta op-program/bin/meta.json --proof-fmt 'op-program/bin/%d.json' --output ""
@@ -144,6 +148,7 @@ devnet-logs:
 
 test-unit:
 	make -C ./op-node test
+	make -C ./shutter-node test
 	make -C ./op-proposer test
 	make -C ./op-batcher test
 	make -C ./op-e2e test

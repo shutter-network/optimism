@@ -19,6 +19,7 @@
         pkgs.docker
         pkgs.nodePackages.pnpm
         pkgs.python311
+        pkgs.go-ethereum
       ];
     }
   ];

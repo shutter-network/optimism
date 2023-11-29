@@ -25,6 +25,11 @@ const (
 	L1FeeVault                    = "0x420000000000000000000000000000000000001a"
 	SchemaRegistry                = "0x4200000000000000000000000000000000000020"
 	EAS                           = "0x4200000000000000000000000000000000000021"
+
+	// Shutter Predeploys
+	Inbox                = "0x4200000000000000000000000000000000000080"
+	KeyperSetManager     = "0x4200000000000000000000000000000000000081"
+	KeyBroadcastContract = "0x4200000000000000000000000000000000000082"
 )
 
 var (
@@ -47,6 +52,10 @@ var (
 	L1FeeVaultAddr                    = common.HexToAddress(L1FeeVault)
 	SchemaRegistryAddr                = common.HexToAddress(SchemaRegistry)
 	EASAddr                           = common.HexToAddress(EAS)
+
+	InboxAddr                = common.HexToAddress(Inbox)
+	KeyperSetManagerAddr     = common.HexToAddress(KeyperSetManager)
+	KeyBroadcastContractAddr = common.HexToAddress(KeyBroadcastContract)
 
 	Predeploys = make(map[string]*common.Address)
 )
@@ -82,4 +91,9 @@ func init() {
 	Predeploys["L1FeeVault"] = &L1FeeVaultAddr
 	Predeploys["SchemaRegistry"] = &SchemaRegistryAddr
 	Predeploys["EAS"] = &EASAddr
+
+	// Shutter predeploys
+	Predeploys["Inbox"] = &InboxAddr
+	Predeploys["KeyperSetManager"] = &KeyperSetManagerAddr
+	Predeploys["KeyBroadcastContract"] = &KeyperSetManagerAddr
 }

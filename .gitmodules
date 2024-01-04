@@ -20,3 +20,11 @@
 [submodule "packages/shop-contracts"]
 	path = packages/shop-contracts
 	url = git@github.com:shutter-network/shop-contracts.git
+	branch = ezdac/develop
+[submodule "packages/op-geth"]
+	path = packages/op-geth
+	url = git@github.com:shutter-network/op-geth.git
+[submodule "packages/rolling-shutter"]
+	path = packages/rolling-shutter
+	url = git@github.com:shutter-network/rolling-shutter.git
+	branch = feat/optimism

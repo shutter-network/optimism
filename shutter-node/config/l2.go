@@ -41,6 +41,7 @@ func (cfg *ShutterL2ClientEndpointConfig) Setup(ctx context.Context, log log.Log
 	if cfg.L2NodeAddr == "" {
 		return nil, nil, errors.New("no L2 RPC endpoint configured")
 	}
+
 	l2Node, err := client.NewRPC(ctx, log, cfg.L2NodeAddr)
 	if err != nil {
 		return nil, nil, err

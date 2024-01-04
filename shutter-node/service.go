@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/ethereum-optimism/optimism/op-node/chaincfg"
+	"github.com/mitchellh/mapstructure"
 	"github.com/urfave/cli/v2"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -13,8 +14,32 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/shutter-node/config"
 	"github.com/ethereum-optimism/optimism/shutter-node/flags"
+	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley"
 	shp2p "github.com/shutter-network/rolling-shutter/rolling-shutter/p2p"
 )
+
+func mapstructureDecode(input, result any, hookFunc mapstructure.DecodeHookFunc) error {
+	decoder, err := mapstructure.NewDecoder(
+		&mapstructure.DecoderConfig{
+			Result:     result,
+			DecodeHook: hookFunc,
+		})
+	if err != nil {
+		return err
+	}
+	return decoder.Decode(input)
+}
+
+func MapstructureUnmarshal(input, result any) error {
+	return mapstructureDecode(
+		input,
+		result,
+		mapstructure.ComposeDecodeHookFunc(
+			medley.TextUnmarshalerHook,
+			mapstructure.StringToSliceHookFunc(","),
+		),
+	)
+}
 
 func NewP2PConfig(ctx *cli.Context, log log.Logger) (*shp2p.Config, error) {
 	p2pConfig := shp2p.NewConfig()
@@ -23,11 +48,16 @@ func NewP2PConfig(ctx *cli.Context, log log.Logger) (*shp2p.Config, error) {
 	// TODO: expose those to the CLI args
 	p2pConfig.SetDefaultValues()
 
-	// TODO: parse privkey and bootnodes and set on the config
 	p2pPrivKey := ctx.String(flags.P2PPrivteKey.Name)
 	bootNodes := ctx.String(flags.P2PBootNodes.Name)
-	_ = p2pPrivKey
-	_ = bootNodes
+	input := map[string]string{
+		"P2PKey":                   p2pPrivKey,
+		"CustomBootstrapAddresses": bootNodes,
+	}
+	err := MapstructureUnmarshal(input, p2pConfig)
+	if err != nil {
+		return nil, err
+	}
 	return p2pConfig, nil
 }
 
@@ -49,11 +79,8 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*config.Config, error) {
 		return nil, err
 	}
 
-	// TODO: cfg.Cancel
 	cfg := &config.Config{
 		Rollup: *rollupConfig,
-		// TODO: either Network or Rollup config
-		// Network
 		P2P:    p2pConfig,
 		L2Sync: l2ClientEndpoint,
 		RPC: config.RPCConfig{

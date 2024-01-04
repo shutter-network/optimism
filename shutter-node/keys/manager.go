@@ -12,6 +12,8 @@ import (
 )
 
 type Manager interface {
+	service.Service
+
 	// TODO: the getters require a mutex...?
 	// at least for retrieving the eonData from the dict,
 	// under the assumption that the keypers and keys can't

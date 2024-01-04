@@ -1,6 +1,8 @@
 package keys
 
 import (
+	"encoding/hex"
+
 	"github.com/pkg/errors"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/identitypreimage"
 	"github.com/shutter-network/shutter/shlib/shcrypto"
@@ -23,6 +25,10 @@ func BytesToEpochID(b []byte) (EpochID, error) {
 		return eid, ErrCopiedBytesMismatch
 	}
 	return eid, nil
+}
+
+func (eid *EpochID) String() string {
+	return hex.EncodeToString(eid[:])
 }
 
 // TODO: use LRU cache

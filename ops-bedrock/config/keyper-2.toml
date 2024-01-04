@@ -1,0 +1,36 @@
+# Peer identity: /p2p/12D3KooWNsnQT2LjZHfz4V9uJ21UZCTBsj7prJK9fTJS3S3HRZRR
+# Ethereum address: 0x933cA0DBF893aaCd2a818ec3791fEC11FDf1aeF2
+
+
+InstanceID = 442
+# If it's empty, we use the standard PG_ environment variables
+DatabaseURL		= "postgres://postgres@db:5432/keyper-2"
+HTTPEnabled = false
+HTTPListenAddress = ':3000'
+
+[P2P]
+P2PKey = 'CAESQPXsG69U2SSGegDSQ3r2y9j/aA69M8GVJ3F52xUONUrvwggTl8VWRgfdyEvq2ZdMOCn6l344GK9dyFb5kT37Vkg='
+ListenAddresses = ["/ip4/0.0.0.0/tcp/23000"]
+# Overwrite p2p boostrap nodes
+CustomBootstrapAddresses  = [
+    "/dns4/bootnode-0/tcp/23000/p2p/12D3KooWJN7262vmnEQHkYG7VrZDwz9fMyJtHyvGp4XSenuUYfeJ",
+    "/dns4/bootnode-1/tcp/23000/p2p/12D3KooWSayB2PEYpXtdk2dEqFaagoy8kDzmWpoD9DieuuzYdcBo"
+]
+Environment = 'production'
+
+[Optimism]
+PrivateKey = 'a6659268f3a7f2010c1284fb05cd8a22a95ab8df7da5d1dd40202d70b9fa800b'
+# The op-geth JSON RPC endpoint, needs WS
+JSONRPCURL = 'ws://l2:8546/'
+
+[Shuttermint]
+ShuttermintURL		= "http://chain-2-validator:26657"
+ValidatorPublicKey = "6836380cc6bb7cdc97ba29f0f5da2b329a872293297ec7d909036a009a1aff13"
+EncryptionKey = '586a2cd9f96d441114a6a5965cbed2c29632efdcaa3666cda55dc98abfc2a620'
+DKGPhaseLength = 8
+DKGStartBlockDelta = 200
+
+[Metrics]
+Enabled = false
+Host = '[::]'
+Port = 9100

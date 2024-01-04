@@ -1,0 +1,11 @@
+{
+ "ActivationBlock": 93,
+ "Members": [
+  "0xed6c85f92a9d8fb07b2773a14f7cd9040a1b3a57",
+  "0x1cd9f3b8091c28e443f475fdf8bac97c8727d537",
+  "0x933ca0dbf893aacd2a818ec3791fec11fdf1aef2",
+  "0x2a0d87ea3a9e0ca33ddd4a62c33878b58152effe"
+ ],
+ "Threshold": 3,
+ "Eon": 1
+}

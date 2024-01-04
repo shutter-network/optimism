@@ -36,6 +36,10 @@ var (
 		Usage:    "Path to deploy config file",
 		Required: true,
 	}
+	shutterDeployConfigFlag = &cli.PathFlag{
+		Name:  "shutter-deploy-config",
+		Usage: "Path to shutter deploy config file",
+	}
 	deploymentDirFlag = &cli.PathFlag{
 		Name:  "deployment-dir",
 		Usage: "Path to network deployment directory. Cannot be used with --l1-deployments",
@@ -73,6 +77,7 @@ var (
 		l1RPCFlag,
 		l1StartingBlockFlag,
 		deployConfigFlag,
+		shutterDeployConfigFlag,
 		deploymentDirFlag,
 		l1DeploymentsFlag,
 		outfileL2Flag,
@@ -141,7 +146,11 @@ var Subcommands = cli.Commands{
 		Action: func(ctx *cli.Context) error {
 			deployConfig := ctx.Path("deploy-config")
 			log.Info("Deploy config", "path", deployConfig)
-			config, err := genesis.NewDeployConfig(deployConfig)
+
+			// TODO: ignore if not provided
+			shutterDeployConfig := ctx.Path("shutter-deploy-config")
+			log.Info("Deploy config (Shutter)", "path", shutterDeployConfig)
+			config, err := genesis.NewDeployConfig(deployConfig, shutterDeployConfig)
 			if err != nil {
 				return err
 			}

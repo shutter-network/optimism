@@ -44,8 +44,9 @@ func main() {
 	flag.StringVar(&f.MonorepoBase, "monorepo-base", "", "Base of the monorepo")
 	flag.Parse()
 
+	canonicalize := true
 	if f.MonorepoBase == "" {
-		log.Fatal("must provide -monorepo-base")
+		canonicalize = false
 	}
 	log.Printf("Using monorepo base %s\n", f.MonorepoBase)
 
@@ -145,13 +146,8 @@ func main() {
 			log.Fatalf("error writing file: %v\n", err)
 		}
 
-		cwd, err := os.Getwd()
-		if err != nil {
-			log.Fatalf("error getting cwd: %v\n", err)
-		}
-
 		lowerName := strings.ToLower(name)
-		outFile := path.Join(cwd, f.Package, lowerName+".go")
+		outFile := path.Join(f.OutDir, lowerName+".go")
 
 		cmd := exec.Command("abigen", "--abi", abiFile, "--bin", bytecodeFile, "--pkg", f.Package, "--type", name, "--out", outFile)
 		cmd.Stdout = os.Stdout
@@ -159,43 +155,46 @@ func main() {
 		if err := cmd.Run(); err != nil {
 			log.Fatalf("error running abigen: %v\n", err)
 		}
+		if canonicalize {
 
-		storage := artifact.StorageLayout
-		canonicalStorage := ast.CanonicalizeASTIDs(&storage, f.MonorepoBase)
-		ser, err := json.Marshal(canonicalStorage)
-		if err != nil {
-			log.Fatalf("error marshaling storage: %v\n", err)
-		}
-		serStr := strings.Replace(string(ser), "\"", "\\\"", -1)
+			// FIXME: is this compatible with the shutter contract generation?
+			storage := artifact.StorageLayout
+			canonicalStorage := ast.CanonicalizeASTIDs(&storage, f.MonorepoBase)
+			ser, err := json.Marshal(canonicalStorage)
+			if err != nil {
+				log.Fatalf("error marshaling storage: %v\n", err)
+			}
+			serStr := strings.Replace(string(ser), "\"", "\\\"", -1)
 
-		deployedSourceMap := ""
-		if _, ok := sourceMapsSet[name]; ok {
-			deployedSourceMap = artifact.DeployedBytecode.SourceMap
-		}
+			deployedSourceMap := ""
+			if _, ok := sourceMapsSet[name]; ok {
+				deployedSourceMap = artifact.DeployedBytecode.SourceMap
+			}
 
-		d := data{
-			Name:              name,
-			StorageLayout:     serStr,
-			DeployedBin:       artifact.DeployedBytecode.Object.String(),
-			Package:           f.Package,
-			DeployedSourceMap: deployedSourceMap,
-		}
+			d := data{
+				Name:              name,
+				StorageLayout:     serStr,
+				DeployedBin:       artifact.DeployedBytecode.Object.String(),
+				Package:           f.Package,
+				DeployedSourceMap: deployedSourceMap,
+			}
 
-		fname := filepath.Join(f.OutDir, strings.ToLower(name)+"_more.go")
-		outfile, err := os.OpenFile(
-			fname,
-			os.O_RDWR|os.O_CREATE|os.O_TRUNC,
-			0o600,
-		)
-		if err != nil {
-			log.Fatalf("error opening %s: %v\n", fname, err)
-		}
+			fname := filepath.Join(f.OutDir, strings.ToLower(name)+"_more.go")
+			outfile, err := os.OpenFile(
+				fname,
+				os.O_RDWR|os.O_CREATE|os.O_TRUNC,
+				0o600,
+			)
+			if err != nil {
+				log.Fatalf("error opening %s: %v\n", fname, err)
+			}
 
-		if err := t.Execute(outfile, d); err != nil {
-			log.Fatalf("error writing template %s: %v", outfile.Name(), err)
+			if err := t.Execute(outfile, d); err != nil {
+				log.Fatalf("error writing template %s: %v", outfile.Name(), err)
+			}
+			outfile.Close()
+			log.Printf("wrote file %s\n", outfile.Name())
 		}
-		outfile.Close()
-		log.Printf("wrote file %s\n", outfile.Name())
 	}
 }
 

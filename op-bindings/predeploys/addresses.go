@@ -1,6 +1,9 @@
 package predeploys
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"github.com/ethereum/go-ethereum/common"
+	shpredeploys "github.com/shutter-network/shop-contracts/predeploy"
+)
 
 // TODO - we should get a single toml yaml or json file source of truth in @eth-optimism/bedrock package
 // This needs to be kept in sync with @eth-optimism/contracts-ts/wagmi.config.ts which also specifies this
@@ -25,11 +28,6 @@ const (
 	L1FeeVault                    = "0x420000000000000000000000000000000000001a"
 	SchemaRegistry                = "0x4200000000000000000000000000000000000020"
 	EAS                           = "0x4200000000000000000000000000000000000021"
-
-	// Shutter Predeploys
-	Inbox                = "0x4200000000000000000000000000000000000080"
-	KeyperSetManager     = "0x4200000000000000000000000000000000000081"
-	KeyBroadcastContract = "0x4200000000000000000000000000000000000082"
 )
 
 var (
@@ -53,10 +51,6 @@ var (
 	SchemaRegistryAddr                = common.HexToAddress(SchemaRegistry)
 	EASAddr                           = common.HexToAddress(EAS)
 
-	InboxAddr                = common.HexToAddress(Inbox)
-	KeyperSetManagerAddr     = common.HexToAddress(KeyperSetManager)
-	KeyBroadcastContractAddr = common.HexToAddress(KeyBroadcastContract)
-
 	Predeploys = make(map[string]*common.Address)
 )
 
@@ -65,6 +59,9 @@ func IsProxied(predeployAddr common.Address) bool {
 	switch predeployAddr {
 	case WETH9Addr:
 	case GovernanceTokenAddr:
+	case shpredeploys.KeyperSetManagerAddr:
+	case shpredeploys.InboxAddr:
+	case shpredeploys.KeyBroadcastContractAddr:
 	default:
 		return true
 	}
@@ -92,8 +89,8 @@ func init() {
 	Predeploys["SchemaRegistry"] = &SchemaRegistryAddr
 	Predeploys["EAS"] = &EASAddr
 
-	// Shutter predeploys
-	Predeploys["Inbox"] = &InboxAddr
-	Predeploys["KeyperSetManager"] = &KeyperSetManagerAddr
-	Predeploys["KeyBroadcastContract"] = &KeyperSetManagerAddr
+	err := shpredeploys.MergeShutterPredeploys(Predeploys)
+	if err != nil {
+		panic(err)
+	}
 }

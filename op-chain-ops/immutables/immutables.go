@@ -56,6 +56,13 @@ func (i ImmutableConfig) Check() error {
 	if _, ok := i["BaseFeeVault"]["recipient"]; !ok {
 		return errors.New("BaseFeeVault recipient not set")
 	}
+	if _, ok := i["Inbox"]["blockGasLimit"]; !ok {
+		return errors.New("Inbox blockGasLimit not set")
+	}
+	if _, ok := i["Inbox"]["initializer"]; !ok {
+		return errors.New("Inbox intializer not set")
+	}
+	// TODO: more checks for shutter
 	return nil
 }
 
@@ -149,6 +156,25 @@ func BuildOptimism(immutable ImmutableConfig) (DeploymentResults, error) {
 		},
 		{
 			Name: "SchemaRegistry",
+		},
+		{
+			Name: "Inbox",
+			Args: []interface{}{
+				immutable["Inbox"]["blockGasLimit"],
+				immutable["Inbox"]["initializer"],
+			},
+		},
+		{
+			Name: "KeyperSetManager",
+			Args: []interface{}{
+				immutable["KeyperSetManager"]["initializer"],
+			},
+		},
+		{
+			Name: "KeyBroadcastContract",
+			Args: []interface{}{
+				immutable["KeyBroadcastContract"]["keyperSetManagerAddress"],
+			},
 		},
 	}
 	return BuildL2(deployments)
@@ -245,6 +271,28 @@ func l2Deployer(backend *backends.SimulatedBackend, opts *bind.TransactOpts, dep
 		_, tx, _, err = bindings.DeployEAS(opts, backend)
 	case "SchemaRegistry":
 		_, tx, _, err = bindings.DeploySchemaRegistry(opts, backend)
+	case "Inbox":
+		blockGasLimit, ok := deployment.Args[0].(uint64)
+		if !ok {
+			return nil, fmt.Errorf("invalid type for blockGasLimit")
+		}
+		initializerAddress, ok := deployment.Args[1].(common.Address)
+		if !ok {
+			return nil, fmt.Errorf("invalid type for daoAddress")
+		}
+		_, tx, _, err = bindings.DeployInbox(opts, backend, blockGasLimit, initializerAddress)
+	case "KeyperSetManager":
+		initializerAddress, ok := deployment.Args[0].(common.Address)
+		if !ok {
+			return nil, fmt.Errorf("invalid type for daoAddress")
+		}
+		_, tx, _, err = bindings.DeployKeyperSetManager(opts, backend, initializerAddress)
+	case "KeyBroadcastContract":
+		keyperSetManagerAddress, ok := deployment.Args[0].(common.Address)
+		if !ok {
+			return nil, fmt.Errorf("invalid type for keyperSetManagerAddress")
+		}
+		_, tx, _, err = bindings.DeployKeyBroadcastContract(opts, backend, keyperSetManagerAddress)
 	default:
 		return tx, fmt.Errorf("unknown contract: %s", deployment.Name)
 	}

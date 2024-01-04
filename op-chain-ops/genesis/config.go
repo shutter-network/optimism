@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	shpredeploys "github.com/shutter-network/shop-contracts/predeploy"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/hardhat"
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
@@ -217,6 +218,11 @@ type DeployConfig struct {
 	// RequiredProtocolVersion indicates the protocol version that
 	// nodes are recommended to adopt, to stay in sync with the network.
 	RecommendedProtocolVersion params.ProtocolVersion `json:"recommendedProtocolVersion"`
+
+	EnableShutter           bool           `json:"enableShutter,omitempty"`
+	ShutterBlockGasLimit    uint64         `json:"shutterBlockGasLimit,omitempty"`
+	ShutterDaoAddress       common.Address `json:"shutterDaoAddress,omitempty"`
+	ShutterSequencerAddress common.Address `json:"shutterSequencerAddress,omitempty"`
 }
 
 // Copy will deeply copy the DeployConfig. This does a JSON roundtrip to copy
@@ -357,6 +363,20 @@ func (d *DeployConfig) Check() error {
 	}
 	if d.RecommendedProtocolVersion == (params.ProtocolVersion{}) {
 		log.Warn("RecommendedProtocolVersion is empty")
+	}
+
+	// Check shutter config, if enablecd
+	if !d.EnableShutter {
+		return nil
+	}
+
+	// TODO: more sanity checks for shutter config
+	if d.ShutterBlockGasLimit == 0 {
+		return fmt.Errorf("%w: Shutter enabled without a block gas allocation", ErrInvalidDeployConfig)
+	}
+
+	if uint64(d.L2GenesisBlockGasLimit) < uint64(d.ShutterBlockGasLimit) {
+		return fmt.Errorf("%w: Shutter allocated block gas limit is higher then L2 block gas limit", ErrInvalidDeployConfig)
 	}
 	return nil
 }
@@ -515,20 +535,22 @@ func (d *DeployConfig) RollupConfig(l1StartBlock *types.Block, l2GenesisBlockHas
 }
 
 // NewDeployConfig reads a config file given a path on the filesystem.
-func NewDeployConfig(path string) (*DeployConfig, error) {
-	file, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("deploy config at %s not found: %w", path, err)
-	}
-
-	dec := json.NewDecoder(bytes.NewReader(file))
-	dec.DisallowUnknownFields()
-
+func NewDeployConfig(paths ...string) (*DeployConfig, error) {
 	var config DeployConfig
-	if err := dec.Decode(&config); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal deploy config: %w", err)
-	}
+	for _, path := range paths {
+		file, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("deploy config at %s not found: %w", path, err)
+		}
 
+		dec := json.NewDecoder(bytes.NewReader(file))
+		dec.DisallowUnknownFields()
+
+		// TODO: does this work with multiple runs?
+		if err := dec.Decode(&config); err != nil {
+			return nil, fmt.Errorf("cannot unmarshal deploy config: %w", err)
+		}
+	}
 	return &config, nil
 }
 
@@ -676,6 +698,7 @@ func NewL2ImmutableConfig(config *DeployConfig, block *types.Block) (immutables.
 	if config.L1FeeVaultRecipient == (common.Address{}) {
 		return immutable, fmt.Errorf("L1FeeVaultRecipient cannot be address(0): %w", ErrInvalidImmutablesConfig)
 	}
+	// TODO: shutter config sanity checks
 
 	immutable["L2StandardBridge"] = immutables.ImmutableValues{
 		"otherBridge": config.L1StandardBridgeProxy,
@@ -706,7 +729,16 @@ func NewL2ImmutableConfig(config *DeployConfig, block *types.Block) (immutables.
 		"minimumWithdrawalAmount": config.BaseFeeVaultMinimumWithdrawalAmount,
 		"withdrawalNetwork":       config.BaseFeeVaultWithdrawalNetwork.ToUint8(),
 	}
-
+	immutable["Inbox"] = immutables.ImmutableValues{
+		"blockGasLimit": config.ShutterBlockGasLimit,
+		"initializer":   config.ShutterDaoAddress,
+	}
+	immutable["KeyperSetManager"] = immutables.ImmutableValues{
+		"initializer": config.ShutterDaoAddress,
+	}
+	immutable["KeyBroadcastContract"] = immutables.ImmutableValues{
+		"keyperSetManagerAddress": shpredeploys.KeyperSetManagerAddr,
+	}
 	return immutable, nil
 }
 
@@ -774,6 +806,19 @@ func NewL2StorageConfig(config *DeployConfig, block *types.Block) (state.Storage
 		"bridge":        predeploys.L2StandardBridgeAddr,
 		"_initialized":  InitializedValue,
 		"_initializing": false,
+	}
+
+	storage["Inbox"] = state.StorageValues{
+		"blockGasLimit": config.ShutterBlockGasLimit,
+		// TODO: use the L2 deployer address?
+		"initializer": config.ShutterDaoAddress,
+	}
+	storage["KeyperSetManager"] = state.StorageValues{
+		// TODO: use the L2 deployer address?
+		"initializer": config.ShutterDaoAddress,
+	}
+	storage["KeyBroadcastContract"] = state.StorageValues{
+		"keyperSetManager": shpredeploys.KeyperSetManagerAddr,
 	}
 	return storage, nil
 }

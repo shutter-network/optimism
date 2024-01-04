@@ -22,6 +22,7 @@ type ShutterSync interface {
 	Start() error
 }
 
+// TODO:remove this module
 type ShutterL2Client struct {
 	*L2Client
 
@@ -138,6 +139,7 @@ func (s *ShutterL2Client) eventLoop() {
 				ctx, cancel := context.WithTimeout(s.resCtx, time.Second*10)
 				defer cancel()
 				_ = ctx
+				s.log.Info("queried keyper-set-manager", "val")
 				// TODO: fetch new blocks, query the contracts for new events etc.
 				// We are only fetching one block at a time here.
 				return nil, nil

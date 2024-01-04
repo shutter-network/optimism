@@ -546,6 +546,10 @@ func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 	// unsafeHead should be updated only if the payload status is VALID
 	if fcRes.PayloadStatus.Status == eth.ExecutionValid {
 		eq.unsafeHead = ref
+		// TODO: here we should queue up the "long"polling call to the shutter node
+		// for the epoch corresponding to l2_unsafe.
+		// The retrieved key will be used in the next call to the engine api in order
+		// to be able to finalise the reveal transaction
 		eq.metrics.RecordL2Ref("l2_unsafe", ref)
 	}
 	eq.unsafePayloads.Pop()

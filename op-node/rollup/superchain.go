@@ -26,6 +26,7 @@ const (
 	zoraMainnet = 7777777
 	labsDevnet  = 997
 	chaosnet    = 888
+	shutterDev  = 5555
 )
 
 // LoadOPStackRollupConfig loads the rollup configuration of the requested chain ID from the superchain-registry.
@@ -113,6 +114,14 @@ func LoadOPStackRollupConfig(chainID uint64) (*Config, error) {
 	if chainID == pgnSepolia {
 		cfg.MaxSequencerDrift = 1000
 		cfg.SeqWindowSize = 7200
+	}
+	if chainID == shutterDev {
+		shutterVersion := uint64(1)
+		cfg.ShutterVersion = &shutterVersion
+		// TODO: add to superchain AddressList when deployed
+		// cfg.ShutterInboxAddress = common.Address("")
+		// cfg.ShutterKeyBroadcastContractAddress
+		// cfg.ShutterKeyperSetManagerContractAddress
 	}
 	return cfg, nil
 }

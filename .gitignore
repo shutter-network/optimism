@@ -20,6 +20,9 @@ cache
 packages/contracts-bedrock/deployments/devnetL1
 packages/contracts-bedrock/deployments/anvil
 
+packages/shop-contracts/artifacts
+packages/shop-contracts/broadcast
+
 # vim
 *.sw*
 

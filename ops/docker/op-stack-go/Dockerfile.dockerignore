@@ -15,5 +15,9 @@
 !/op-proposer
 !/op-service
 !/op-wheel
+!/packages/op-geth
+!/packages/rolling-shutter
+!/packages/shop-contracts
+!/shutter-node
 !/go.mod
 !/go.sum

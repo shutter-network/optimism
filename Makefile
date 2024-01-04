@@ -36,7 +36,7 @@ golang-docker:
 			--progress plain \
 			--load \
 			-f docker-bake.hcl \
-			op-node op-batcher op-proposer op-challenger
+			op-node op-batcher op-proposer op-challenger shutter-node packages
 .PHONY: golang-docker
 
 submodules:

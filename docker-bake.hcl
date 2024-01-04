@@ -54,6 +54,19 @@ target "op-node" {
   tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/op-node:${tag}"]
 }
 
+target "shutter-node" {
+  dockerfile = "Dockerfile"
+  context = "./shutter-node"
+  args = {
+    OP_STACK_GO_BUILDER = "op-stack-go"
+  }
+  contexts = {
+    op-stack-go: "target:op-stack-go"
+  }
+  platforms = split(",", PLATFORMS)
+  tags = [for tag in split(",", IMAGE_TAGS) : "${REGISTRY}/${REPOSITORY}/shutter-node:${tag}"]
+}
+
 target "op-batcher" {
   dockerfile = "Dockerfile"
   context = "./op-batcher"

@@ -157,7 +157,8 @@ func (n *ShutterNode) initP2P(ctx context.Context, cfg *config.Config) error {
 	}
 	n.p2p = mss
 	// FIXME: remove hardcoded instance ID
-	n.keyHandler = p2p.NewDecryptionKeyHandler(442, n.keyManager)
+	n.keyHandler = p2p.NewDecryptionKeyHandler(442, n.keyManager, n.log)
+	n.p2p.AddMessageHandler(n.keyHandler)
 	return nil
 }
 

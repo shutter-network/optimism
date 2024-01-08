@@ -15,6 +15,7 @@ from collections import namedtuple
 
 
 import devnet.log_setup
+from devnet.shutter import Shutter
 
 pjoin = os.path.join
 
@@ -64,6 +65,7 @@ def main():
     devnet_config_template_path = pjoin(deploy_config_dir, 'devnetL1-template.json')
     ops_chain_ops = pjoin(monorepo_dir, 'op-chain-ops')
     sdk_dir = pjoin(monorepo_dir, 'packages', 'sdk')
+    shutter_contracts_dir = pjoin(monorepo_dir, "packages", "shop-contracts")
 
     paths = Bunch(
       mono_repo_dir=monorepo_dir,
@@ -83,7 +85,8 @@ def main():
       allocs_path=pjoin(devnet_dir, 'allocs-l1.json'),
       addresses_json_path=pjoin(devnet_dir, 'addresses.json'),
       sdk_addresses_json_path=pjoin(devnet_dir, 'sdk-addresses.json'),
-      rollup_config_path=pjoin(devnet_dir, 'rollup.json')
+      rollup_config_path=pjoin(devnet_dir, 'rollup.json'),
+      shutter_contracts_dir=shutter_contracts_dir,
     )
 
     if args.test:
@@ -189,6 +192,7 @@ def devnet_l1_genesis(paths):
 
 # Bring up the devnet where the contracts are deployed to L1
 def devnet_deploy(paths):
+    sht = Shutter(paths)
     if os.path.exists(paths.genesis_l1_path):
         log.info('L1 genesis already generated.')
     else:
@@ -221,14 +225,20 @@ def devnet_deploy(paths):
         log.info('L2 genesis and rollup configs already generated.')
     else:
         log.info('Generating L2 genesis and rollup configs.')
-        run_command([
+        cmd = [
             'go', 'run', 'cmd/main.go', 'genesis', 'l2',
             '--l1-rpc', 'http://localhost:8545',
             '--deploy-config', paths.devnet_config_path,
             '--deployment-dir', paths.deployment_dir,
             '--outfile.l2', paths.genesis_l2_path,
             '--outfile.rollup', paths.rollup_config_path
-        ], cwd=paths.op_node_dir)
+        ]
+        if sht.enabled:
+            cmd += [
+                "--shutter-deploy-config",
+                sht.devnet_config,
+            ]
+        run_command(cmd, cwd=paths.op_node_dir)
 
     rollup_config = read_json(paths.rollup_config_path)
     addresses = read_json(paths.addresses_json_path)
@@ -256,6 +266,9 @@ def devnet_deploy(paths):
     run_command(['docker', 'compose', 'up', '-d', 'artifact-server'], cwd=paths.ops_bedrock_dir, env={
         'PWD': paths.ops_bedrock_dir
     })
+
+    if sht.enabled:
+        sht.run_all()
 
     log.info('Devnet ready.')
 

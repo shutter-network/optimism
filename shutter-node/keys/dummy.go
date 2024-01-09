@@ -4,22 +4,24 @@ import (
 	"context"
 	"encoding/hex"
 
+	"github.com/ethereum-optimism/optimism/shutter-node/database/models"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/service"
 	"github.com/shutter-network/shutter/shlib/shcrypto"
+	"gorm.io/gorm"
 )
 
 type TestManager struct {
 	logger     log.Logger
-	newSKChan  chan *NewSecretKey
-	newEonChan chan *NewEon
+	newSKChan  chan *models.Epoch
+	newEonChan chan *models.Eon
 }
 
 func NewTestManager(logger log.Logger) *TestManager {
 	return &TestManager{
-		newSKChan:  make(chan *NewSecretKey),
-		newEonChan: make(chan *NewEon),
+		newSKChan:  make(chan *models.Epoch),
+		newEonChan: make(chan *models.Eon),
 	}
 }
 
@@ -27,21 +29,24 @@ func (t *TestManager) GetPublicKey(eon uint64) *shcrypto.EonPublicKey {
 	return nil
 }
 
+func (t *TestManager) GetDatabase() *gorm.DB {
+	return nil
+}
+
 func (t *TestManager) IsKeyperInEon(eon uint64, address common.Address) bool {
 	return false
 }
 
-func (t *TestManager) GetChannelNewSecretKey() chan<- *NewSecretKey {
+func (t *TestManager) GetChannelNewSecretKey() chan<- *models.Epoch {
 	return t.newSKChan
 }
 
-func (t *TestManager) GetChannelNewEon() chan<- *NewEon {
+func (t *TestManager) GetChannelNewEon() chan<- *models.Eon {
 	return t.newEonChan
 }
 
-func (t *TestManager) RequestDecryptionKey(eon uint64,
-	batch uint64,
-) error {
+func (m *TestManager) RequestDecryptionKey(ctx context.Context, batch uint64) <-chan *KeyRequestResult {
+	// TODO: return the channel
 	return nil
 }
 
@@ -57,7 +62,7 @@ func (t *TestManager) pollNewSk(ctx context.Context) error {
 				t.logger.Error("couldn't encode secret key")
 				continue
 			}
-			t.logger.Info("got new DecryptionKey", "key", hex.EncodeToString(keyBytes), "epoch", sk.Epoch.String())
+			t.logger.Info("got new DecryptionKey", "key", hex.EncodeToString(keyBytes), "epoch", sk.Identity.String())
 
 		case <-ctx.Done():
 			return ctx.Err()

@@ -32,7 +32,9 @@ class Shutter:
         self.init_shuttermint()
         self.run()
         self.init_l2_contracts()
-        time.sleep(3)
+        # FIXME: this does not seem to work yet.
+        # sometimes we get an OOB error
+        time.sleep(10)
         self.bootstrap_shuttermint()
         self.run()
 

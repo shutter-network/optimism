@@ -9,13 +9,14 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/pkg/errors"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/p2pmsg"
-	"github.com/shutter-network/shutter/shlib/shcrypto"
 
+	"github.com/ethereum-optimism/optimism/shutter-node/database/models"
 	"github.com/ethereum-optimism/optimism/shutter-node/keys"
+	"github.com/ethereum-optimism/optimism/shutter-node/keys/identity"
 )
 
 func NewDecryptionKeyHandler(instanceID uint64, manager keys.Manager, logger log.Logger) *DecryptionKeyHandler {
-	c := manager.GetChannelNewSecretKey()
+	c := manager.GetChannelNewEpoch()
 	return &DecryptionKeyHandler{
 		InstanceID:   instanceID,
 		Manager:      manager,
@@ -28,11 +29,13 @@ func NewDecryptionKeyHandler(instanceID uint64, manager keys.Manager, logger log
 type DecryptionKeyHandler struct {
 	InstanceID   uint64
 	Manager      keys.Manager
-	newSecretKey chan<- *keys.NewSecretKey
+	newSecretKey chan<- *models.Epoch
 	log          log.Logger
 }
 
 func (h DecryptionKeyHandler) ValidateMessage(_ context.Context, msg p2pmsg.Message) (pubsub.ValidationResult, error) {
+	// NOCHECKIN:
+	h.log.Info("received unvalidated message on DecryptionKeyHandler topic")
 	key := msg.(*p2pmsg.DecryptionKey)
 	if key.GetInstanceID() != h.InstanceID {
 		return pubsub.ValidationReject, errors.Errorf("instance ID mismatch (want=%d, have=%d)", h.InstanceID, key.GetInstanceID())
@@ -51,19 +54,23 @@ func (h DecryptionKeyHandler) ValidateMessage(_ context.Context, msg p2pmsg.Mess
 	}
 	epochId := key.GetEpochID()
 	h.log.Info("received decryption key", "eon", key.GetEon(), "epoch-id", hexutil.Encode(epochId))
-	publicKey := h.Manager.GetPublicKey(key.Eon)
-	if publicKey == nil {
-		return pubsub.ValidationReject, errors.Errorf("no public-key known for eon %d", key.Eon)
-	}
-
-	ok, err := shcrypto.VerifyEpochSecretKey(epochSecretKey, publicKey, key.EpochID)
-	if err != nil {
-		return pubsub.ValidationReject, errors.Wrapf(err, "error while checking epoch secret key for epoch %v", key.EpochID)
-	}
-	if !ok {
-		return pubsub.ValidationReject, errors.Wrapf(err, "epoch secret key for epoch %v is not valid", key.EpochID)
-	}
+	_ = epochSecretKey
 	return pubsub.ValidationAccept, nil
+	// TODO: validate that we fulfill all eon preconditions for this..
+
+	// publicKey := h.Manager.GetPublicKey(key.Eon)
+	// if publicKey == nil {
+	// 	return pubsub.ValidationReject, errors.Errorf("no public-key known for eon %d", key.Eon)
+	// }
+
+	// ok, err := shcrypto.VerifyEpochSecretKey(epochSecretKey, publicKey, key.EpochID)
+	// if err != nil {
+	// 	return pubsub.ValidationReject, errors.Wrapf(err, "error while checking epoch secret key for epoch %v", key.EpochID)
+	// }
+	// if !ok {
+	// 	return pubsub.ValidationReject, errors.Wrapf(err, "epoch secret key for epoch %v is not valid", key.EpochID)
+	// }
+	// return pubsub.ValidationAccept, nil
 }
 
 func (h *DecryptionKeyHandler) HandleMessage(
@@ -77,18 +84,22 @@ func (h *DecryptionKeyHandler) HandleMessage(
 		// so this shouldn't happen
 		return nil, err
 	}
-
-	epochID, err := keys.BytesToEpochID(key.EpochID)
+	h.log.Info("handling decryption-key", "key")
+	idPreim, err := identity.BytesToPreimage(key.EpochID)
 	if err != nil {
 		return nil, err
 	}
+	// this is only partially filled with data
+	epoch := &models.Epoch{
+		Eon: models.Eon{
+			Index: uint(key.Eon),
+		},
+		Identity:  idPreim,
+		SecretKey: sk,
+	}
 
 	select {
-	case h.newSecretKey <- &keys.NewSecretKey{
-		Eon:       key.Eon,
-		Epoch:     epochID,
-		SecretKey: sk,
-	}:
+	case h.newSecretKey <- epoch:
 		return nil, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()

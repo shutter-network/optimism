@@ -11,16 +11,14 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/ethereum-optimism/optimism/op-node/metrics"
-	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/httputil"
-	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/shutter-node/config"
+	"github.com/ethereum-optimism/optimism/shutter-node/database"
 	"github.com/ethereum-optimism/optimism/shutter-node/keys"
 	"github.com/ethereum-optimism/optimism/shutter-node/p2p"
-	shclient "github.com/shutter-network/rolling-shutter/rolling-shutter/keyperimpl/optimism/sync"
+	"github.com/ethereum-optimism/optimism/shutter-node/rollup"
 	service "github.com/shutter-network/rolling-shutter/rolling-shutter/medley/service"
 	shp2p "github.com/shutter-network/rolling-shutter/rolling-shutter/p2p"
 )
@@ -32,13 +30,13 @@ type ShutterNode struct {
 
 	metricsSrv *httputil.HTTPServer
 
-	l2Client   *sources.ShutterL2Client
 	keyHandler *p2p.DecryptionKeyHandler
 	keyManager keys.Manager
+	syncer     *rollup.Syncer
+	db         *database.Database
 
-	rpcClient *shclient.ShutterL2Client
-	p2p       shp2p.Messaging
-	errgrp    *errgroup.Group
+	p2p    shp2p.Messaging
+	errgrp *errgroup.Group
 
 	// some resources cannot be stopped directly, like the p2p gossipsub router (not our design),
 	// and depend on this ctx to be closed.
@@ -78,7 +76,6 @@ func New(ctx context.Context, cfg *config.Config, log log.Logger, appVersion str
 	n.resourcesCtx, n.resourcesClose = context.WithCancel(context.Background())
 
 	err := n.init(ctx, cfg)
-	n.log.Info("initialised shutter node", "config", cfg)
 	if err != nil {
 		log.Error("Error initializing the shutter node", "err", err)
 		// ensure we always close the node resources if we fail to initialize the node.
@@ -87,15 +84,22 @@ func New(ctx context.Context, cfg *config.Config, log log.Logger, appVersion str
 		}
 		return nil, err
 	}
+	n.log.Info("initialised shutter node", "config", cfg)
 	return n, nil
 }
 
 func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
+	var err error
 	n.log.Info("Initializing shutter node", "version", n.appVersion)
-	n.keyManager = keys.NewTestManager(n.log)
-	if err := n.initShutterL2Client(ctx, cfg); err != nil {
-		return fmt.Errorf("failed to init L2 RPC sync: %w", err)
+	if err := n.initDatabase(cfg); err != nil {
+		return fmt.Errorf("failed to init the database: %w", err)
 	}
+
+	n.keyManager, err = keys.New(n.db, n.log)
+	if err != nil {
+		return err
+	}
+	n.syncer = rollup.NewL2Syncer(cfg.L2Sync.L2NodeAddr, n.log, n.keyManager, n.db)
 	if err := n.initP2P(ctx, cfg); err != nil {
 		return fmt.Errorf("failed to init the P2P stack: %w", err)
 	}
@@ -107,31 +111,13 @@ func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-func (n *ShutterNode) initShutterL2Client(ctx context.Context, cfg *config.Config) error {
-	// FIXME: this does not seem to be the typical JSON-RPC client.
-	// rpcSyncClient, rpcCfg, err := cfg.L2Sync.Setup(ctx, n.log, &cfg.Rollup)
-	// if err != nil {
-	// 	return fmt.Errorf("failed to setup L2 execution-engine RPC client for RPC sync: %w", err)
-	// }
-	// if rpcSyncClient == nil { // if no RPC client is configured to sync from, then don't add the RPC sync client
-	// 	return nil
-	// }
-
-	// XXX: instead use a json-rpc client
-	jsonRPC, err := rpc.DialContext(ctx, cfg.L2Sync.L2NodeAddr)
-	if err != nil {
+func (n *ShutterNode) initDatabase(cfg *config.Config) error {
+	db := &database.Database{}
+	// TODO: make file configurable
+	if err := db.Connect("test.db"); err != nil {
 		return err
 	}
-	iclient := client.NewInstrumentedClient(jsonRPC, n.metrics)
-	shutterClient, err := shclient.NewShutterL2Client(
-		ctx,
-		shclient.WithClient(iclient),
-		shclient.WithLogger(n.log),
-	)
-	if err != nil {
-		return err
-	}
-	n.rpcClient = shutterClient
+	n.db = db
 	return nil
 }
 
@@ -141,6 +127,7 @@ func (n *ShutterNode) initMetricsServer(cfg *config.Config) error {
 		return nil
 	}
 	n.log.Debug("starting metrics server", "addr", cfg.Metrics.ListenAddr, "port", cfg.Metrics.ListenPort)
+	// FIXME: start in a service?
 	metricsSrv, err := n.metrics.StartServer(cfg.Metrics.ListenAddr, cfg.Metrics.ListenPort)
 	if err != nil {
 		return fmt.Errorf("failed to start metrics server: %w", err)
@@ -151,32 +138,37 @@ func (n *ShutterNode) initMetricsServer(cfg *config.Config) error {
 }
 
 func (n *ShutterNode) initP2P(ctx context.Context, cfg *config.Config) error {
+	n.log.Info("got p2p config", "p2p-config", *cfg.P2P)
 	mss, err := shp2p.New(cfg.P2P)
 	if err != nil {
 		return err
 	}
 	n.p2p = mss
-	// FIXME: remove hardcoded instance ID
-	n.keyHandler = p2p.NewDecryptionKeyHandler(442, n.keyManager, n.log)
+	n.keyHandler = p2p.NewDecryptionKeyHandler(cfg.InstanceID, n.keyManager, n.log)
 	n.p2p.AddMessageHandler(n.keyHandler)
 	return nil
 }
 
 func (n *ShutterNode) Start(ctx context.Context) error {
-	// If the rpc unsafe sync client is enabled, start its event loop
-	if n.rpcClient != nil {
-		// TODO: start syncing the shutter state and the latest "unsafe" block
-		// from the op-geth json RPC l2 client
+	n.errgrp = service.RunBackground(ctx, n.keyManager, n.syncer)
+	// XXX: the appCtx didn't seem to work for e.g. libp2p.
+	p2perrgrp := service.RunBackground(n.resourcesCtx, n.p2p)
+	n.log.Info("Rollup node started")
+	go func() {
+		err := n.errgrp.Wait()
+		n.log.Error("errgroup wait returned", "error", err)
+		if err != nil {
+			n.cancel(err)
+		}
+	}()
 
-		// FIXME: comply to the service interface
-		// if err := n.rpcClient.Start(ctx); err != nil {
-		// 	n.log.Error("Could not start the RPC L2 client", "err", err)
-		// 	return err
-		// }
-		// n.log.Info("Started L2-RPC client service")
-	}
-	n.errgrp = service.RunBackground(n.resourcesCtx, n.p2p, n.keyManager)
-	log.Info("Rollup node started")
+	go func() {
+		err := p2perrgrp.Wait()
+		n.log.Error("p2p errgroup wait returned", "error", err)
+		if err != nil {
+			n.cancel(err)
+		}
+	}()
 	return nil
 }
 
@@ -193,24 +185,8 @@ func (n *ShutterNode) Stop(ctx context.Context) error {
 	}
 
 	var result *multierror.Error
-	if n.rpcClient != nil {
-		// FIXME: comply to the service interdface
-		// if err := n.rpcClient.Close(); err != nil {
-		// 	result = multierror.Append(result, fmt.Errorf("failed to close RPC server: %w", err))
-		// }
-	}
-
-	// if n.server != nil {
-	// 	if err := n.server.Stop(ctx); err != nil {
-	// 		result = multierror.Append(result, fmt.Errorf("failed to close RPC server: %w", err))
-	// 	}
-	// }
-	// if n.p2pSigner != nil {
-	// 	if err := n.p2pSigner.Close(); err != nil {
-	// 		result = multierror.Append(result, fmt.Errorf("failed to close p2p signer: %w", err))
-	// 	}
-	// }
 	if n.resourcesClose != nil {
+		// p2p context
 		n.resourcesClose()
 	}
 
@@ -239,7 +215,7 @@ func (n *ShutterNode) Stop(ctx context.Context) error {
 	log.Info("will wait for errgroup")
 	err := n.errgrp.Wait()
 	if err != nil {
-		log.Error("errgroup errorered", err)
+		log.Error("errgroup errorered", "error", err)
 	}
 
 	log.Info("shutting down")

@@ -37,13 +37,24 @@ var (
 		Usage:   fmt.Sprintf("Predefined network selection. Available networks: %s", strings.Join(chaincfg.AvailableNetworks(), ", ")),
 		EnvVars: prefixEnvVars("NETWORK"),
 	}
+	InstanceID = &cli.Uint64Flag{
+		Name:    "instance-id",
+		Usage:   "application specific instance-id. Has to match the network the node operates in.",
+		EnvVars: prefixEnvVars("INSTANCE_ID"),
+	}
 	P2PBootNodes = &cli.StringFlag{
 		Name: "p2p.bootnodes",
 		Usage: "Comma-separated multiaddr-format peer list. Connection to trusted PeerEXchange (PX) bootnodes, these peers will be regarded as trusted. " +
 			"Addresses of the local peer are ignored. Duplicate/Alternative addresses for the same peer all apply, but only a single connection per peer is established.",
 		EnvVars: prefixEnvVars("P2P_BOOTNODES"),
 	}
-	P2PPrivteKey = &cli.StringFlag{
+	P2PListenAddresses = &cli.StringFlag{
+		Name:    "p2p.listen-addresses",
+		Value:   "/ip4/0.0.0.0/tcp/23000",
+		Usage:   "Comma-separated multiaddr-format list. Determines on what ports / protocols to listen for.",
+		EnvVars: prefixEnvVars("P2P_LISTEN_ADDRS"),
+	}
+	P2PPrivateKey = &cli.StringFlag{
 		Name: "p2p.private-key",
 		// TODO: description
 		Usage:   "p2p private key",
@@ -110,8 +121,9 @@ var (
 var requiredFlags = []cli.Flag{
 	RollupConfig,
 	L2UnsafeSyncRPC,
+	InstanceID,
 	P2PBootNodes,
-	P2PPrivteKey,
+	P2PPrivateKey,
 }
 
 var optionalFlags = []cli.Flag{
@@ -125,6 +137,7 @@ var optionalFlags = []cli.Flag{
 	L2UnsafeSyncRPCTrustRPCFlag,
 	L2UnsafeSyncRPCPollIntervalFlag,
 	RollupLoadProtocolVersions,
+	P2PListenAddresses,
 }
 
 // Flags contains the list of configuration options available to the binary.

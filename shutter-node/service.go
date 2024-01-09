@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum-optimism/optimism/shutter-node/config"
 	"github.com/ethereum-optimism/optimism/shutter-node/flags"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley"
+	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/encodeable/address"
 	shp2p "github.com/shutter-network/rolling-shutter/rolling-shutter/p2p"
 )
 
@@ -43,16 +44,19 @@ func MapstructureUnmarshal(input, result any) error {
 
 func NewP2PConfig(ctx *cli.Context, log log.Logger) (*shp2p.Config, error) {
 	p2pConfig := shp2p.NewConfig()
-	// XXX: for now, the default values are used,
-	// and thus listen address and environment is not configurable
-	// TODO: expose those to the CLI args
 	p2pConfig.SetDefaultValues()
+	// HACK: the mapstructure seems to write to the existing array,
+	// and thus if the default array is longer, values at the tail are not
+	// removed. We have to remove this manually
+	p2pConfig.ListenAddresses = []*address.P2PAddress{}
 
-	p2pPrivKey := ctx.String(flags.P2PPrivteKey.Name)
+	p2pPrivKey := ctx.String(flags.P2PPrivateKey.Name)
 	bootNodes := ctx.String(flags.P2PBootNodes.Name)
+	listenAddrs := ctx.String(flags.P2PListenAddresses.Name)
 	input := map[string]string{
 		"P2PKey":                   p2pPrivKey,
 		"CustomBootstrapAddresses": bootNodes,
+		"ListenAddresses":          listenAddrs,
 	}
 	err := MapstructureUnmarshal(input, p2pConfig)
 	if err != nil {
@@ -80,9 +84,10 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*config.Config, error) {
 	}
 
 	cfg := &config.Config{
-		Rollup: *rollupConfig,
-		P2P:    p2pConfig,
-		L2Sync: l2ClientEndpoint,
+		InstanceID: ctx.Uint64(flags.InstanceID.Name),
+		Rollup:     *rollupConfig,
+		P2P:        p2pConfig,
+		L2Sync:     l2ClientEndpoint,
 		RPC: config.RPCConfig{
 			ListenAddr: ctx.String(flags.RPCListenAddr.Name),
 			ListenPort: ctx.Int(flags.RPCListenPort.Name),

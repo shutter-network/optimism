@@ -11,9 +11,10 @@ import (
 )
 
 type Config struct {
-	L2Sync ShutterL2ClientEndpointConfig
-	Rollup rollup.Config
-	P2P    *shp2p.Config
+	InstanceID uint64
+	L2Sync     ShutterL2ClientEndpointConfig
+	Rollup     rollup.Config
+	P2P        *shp2p.Config
 
 	// Server config
 	RPC     RPCConfig
@@ -55,6 +56,10 @@ func (m MetricsConfig) Check() error {
 func (cfg *Config) Check() error {
 	if err := cfg.L2Sync.Check(); err != nil {
 		return fmt.Errorf("sync config error: %w", err)
+	}
+	// TODO: check p2p config
+	if cfg.P2P == nil {
+		return fmt.Errorf("no p2p config")
 	}
 	if err := cfg.Rollup.Check(); err != nil {
 		return fmt.Errorf("rollup config error: %w", err)

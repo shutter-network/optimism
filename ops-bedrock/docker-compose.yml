@@ -251,8 +251,11 @@ services:
     entrypoint: # pass the L2 specific flags by overriding the entry-point and adding extra arguments
       - 'shutter-node'
     command: >
-      --l2.unsafe-sync-rpc=http://l2:8545
+      --log.level=debug
+      --l2.unsafe-sync-rpc=ws://l2:8546
       --rollup.config=/rollup.json
+      --instance-id=442
+      --p2p.listen-addresses=/ip4/0.0.0.0/tcp/23000,/ip6/::/tcp/23000
       --p2p.private-key=CAESQOWuKv6bLyasxtAo0JYVjfvz+XEiWZj2JUpu8E0vMdPbavyOS/iXd3ZGRBcb9KeAfdROj0ZbQCP0RhycZ2P7Y70=
       --p2p.bootnodes=/dns4/bootnode-0/tcp/23000/p2p/12D3KooWJN7262vmnEQHkYG7VrZDwz9fMyJtHyvGp4XSenuUYfeJ,/dns4/bootnode-1/tcp/23000/p2p/12D3KooWSayB2PEYpXtdk2dEqFaagoy8kDzmWpoD9DieuuzYdcBo
       --metrics.enabled
@@ -300,6 +303,7 @@ services:
       - shutter
     entrypoint:
       - /rolling-shutter
+      - '--loglevel=:debug,basichost:info,swarm:info,swarm2:info,net/identify:debug,pubsub:info,p2p-config:info,upgrader:info'
       - p2pnode
     command: '--config /config/bootnode-0.toml'
     volumes:

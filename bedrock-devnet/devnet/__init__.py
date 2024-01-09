@@ -1,18 +1,17 @@
 import argparse
+import calendar
+import concurrent.futures
+import datetime
+import http.client
+import json
 import logging
 import os
-import subprocess
-import json
-import socket
-import calendar
-import datetime
-import time
 import shutil
-import http.client
-from multiprocessing import Process, Queue
-import concurrent.futures
+import socket
+import subprocess
+import time
 from collections import namedtuple
-
+from multiprocessing import Process, Queue
 
 import devnet.log_setup
 from devnet.shutter import Shutter
@@ -113,7 +112,9 @@ def main():
                     cwd=paths.ops_bedrock_dir, env={
             'PWD': paths.ops_bedrock_dir,
             'DOCKER_BUILDKIT': '1', # (should be available by default in later versions, but explicitly enable it anyway)
-            'COMPOSE_DOCKER_CLI_BUILD': '1'  # use the docker cache
+            'COMPOSE_DOCKER_CLI_BUILD': '1',  # use the docker cache
+            # XXX: make dependent on shutter flag
+            'COMPOSE_PROFILES': 'shutter'  # use the shutter compose profile to build
         })
 
     log.info('Devnet starting')

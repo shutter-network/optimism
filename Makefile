@@ -152,6 +152,7 @@ test-unit:
 	make -C ./op-proposer test
 	make -C ./op-batcher test
 	make -C ./op-e2e test
+	make -C ./shutter-node test
 	pnpm test
 .PHONY: test-unit
 

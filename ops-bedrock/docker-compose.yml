@@ -20,7 +20,6 @@ services:
       context: ../
       dockerfile: ops/docker/op-stack-go/Dockerfile
       args:
-        GITHUB_ACCESS_TOKEN: $GITHUB_ACCESS_TOKEN
         GIT_COMMIT: 'dev'
         GIT_DATE: '0'
     image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-stack-go:devnet
@@ -38,8 +37,6 @@ services:
     build:
       context: ../packages/rolling-shutter
       dockerfile: docker/build-src/optimism/Dockerfile
-      args:
-        GITHUB_ACCESS_TOKEN: $GITHUB_ACCESS_TOKEN
     profiles:
       - shutter
     image: shutter

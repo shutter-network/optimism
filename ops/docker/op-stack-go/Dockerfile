@@ -6,12 +6,6 @@ RUN apk add --no-cache make gcc musl-dev linux-headers git jq bash
 COPY ./go.mod /app/go.mod
 COPY ./go.sum /app/go.sum
 
-# allow private repos
-ENV GOPRIVATE="github.com/shutter-network/*"
-ENV GONOPROXY=localhost
-ARG GITHUB_ACCESS_TOKEN
-RUN git config --global url."https://$GITHUB_ACCESS_TOKEN@github.com/".insteadOf "https://github.com/"
-
 WORKDIR /app
 
 RUN echo "go mod cache: $(go env GOMODCACHE)"

@@ -133,8 +133,7 @@ func (s *Syncer) HandleLatestBlock(ctx context.Context, lb *shopevent.LatestBloc
 			return result.Error
 		}
 
-		s.finalizeLatestState(ctx, tx, latestState, newState)
-		return nil
+		return s.finalizeLatestState(ctx, tx, nil, newState)
 	})
 }
 

@@ -1,11 +1,12 @@
-package manager_test
+package shutter_test
 
 import (
 	"math/big"
+	"math/rand"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	shopevent "github.com/shutter-network/rolling-shutter/rolling-shutter/keyperimpl/optimism/sync/event"
+	syncevent "github.com/shutter-network/rolling-shutter/rolling-shutter/medley/chainsync/event"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/encodeable/number"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/identitypreimage"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/testkeygen"
@@ -15,22 +16,21 @@ import (
 
 var dummyID = identitypreimage.BigToIdentityPreimage(common.Big0)
 
+var rng = rand.New(rand.NewSource(42))
+
 func NewKeypers(t *testing.T, eon, numKeyper, threshold, activationBlock uint) *Keypers {
-	// TODO: sanity check threshold
 	tkg := testkeygen.NewTestKeyGenerator(t, uint64(numKeyper), uint64(threshold), true)
-	// TODO: randomize
-	keypers1 := []common.Address{
-		common.BigToAddress(big.NewInt(1)),
-		common.BigToAddress(big.NewInt(2)),
-		common.BigToAddress(big.NewInt(3)),
-		common.BigToAddress(big.NewInt(4)),
+	keypers := []common.Address{}
+	for i := 0; i < int(numKeyper); i++ {
+		keypers = append(keypers, common.BigToAddress(big.NewInt(rng.Int63())))
 	}
 	return &Keypers{
-		t:         t,
-		addrs:     keypers1,
-		threshold: uint(threshold),
-		eon:       eon,
-		tkg:       tkg,
+		t:               t,
+		addrs:           keypers,
+		activationBlock: activationBlock,
+		threshold:       uint(threshold),
+		eon:             eon,
+		tkg:             tkg,
 	}
 }
 
@@ -43,8 +43,8 @@ type Keypers struct {
 	tkg             *testkeygen.TestKeyGenerator
 }
 
-func (k *Keypers) KeyperSet(atBlock uint) *shopevent.KeyperSet {
-	return &shopevent.KeyperSet{
+func (k *Keypers) KeyperSet(atBlock uint) *syncevent.KeyperSet {
+	return &syncevent.KeyperSet{
 		ActivationBlock: uint64(k.activationBlock),
 		Members:         k.addrs,
 		Threshold:       uint64(k.threshold),
@@ -53,24 +53,31 @@ func (k *Keypers) KeyperSet(atBlock uint) *shopevent.KeyperSet {
 	}
 }
 
-func (k *Keypers) EonPubkey(atBlock uint) *shopevent.EonPublicKey {
+func (k *Keypers) EonPubkey(atBlock uint) *syncevent.EonPublicKey {
 	eonpubkey, err := k.tkg.EonPublicKey(dummyID).GobEncode()
 	assert.NilError(k.t, err)
-	return &shopevent.EonPublicKey{
+	return &syncevent.EonPublicKey{
 		Eon:           uint64(k.eon),
 		Key:           eonpubkey,
 		AtBlockNumber: number.BigToBlockNumber(big.NewInt(int64(atBlock))),
 	}
 }
 
-func (k *Keypers) EpochKey(blockNum uint) *p2pmsg.DecryptionKey {
+func (k *Keypers) EpochKey(blockNum uint, wrongKey bool) *p2pmsg.DecryptionKeys {
 	idt := identitypreimage.Uint64ToIdentityPreimage(uint64(blockNum))
-	epoch, err := k.tkg.EpochSecretKey(idt).GobEncode()
+	keygenIdt := idt
+	if wrongKey {
+		keygenIdt = identitypreimage.Uint64ToIdentityPreimage(uint64(blockNum + 1))
+	}
+	epochSk, err := k.tkg.EpochSecretKey(keygenIdt).GobEncode()
 	assert.NilError(k.t, err)
-	return &p2pmsg.DecryptionKey{
+	key := &p2pmsg.Key{
+		Identity: idt.Bytes(),
+		Key:      epochSk,
+	}
+	return &p2pmsg.DecryptionKeys{
 		InstanceID: InstanceID,
 		Eon:        uint64(k.eon),
-		EpochID:    idt.Bytes(),
-		Key:        epoch,
+		Keys:       []*p2pmsg.Key{key},
 	}
 }

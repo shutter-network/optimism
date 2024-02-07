@@ -44,8 +44,12 @@ func (eid Preimage) String() string {
 	return hex.EncodeToString([]byte(eid))
 }
 
+func (eid Preimage) Uint64() uint64 {
+	return identitypreimage.IdentityPreimage([]byte(eid)).Uint64()
+}
+
 // TODO: use LRU cache
-func BatchNumberToEpochID(b uint64) (Preimage, error) {
+func BlockNumberToEpochID(b uint64) (Preimage, error) {
 	preim := identitypreimage.Uint64ToIdentityPreimage(b)
 	shEID := shcrypto.ComputeEpochID(preim.Bytes())
 	return BytesToPreimage(shEID.Marshal())

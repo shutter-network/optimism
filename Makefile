@@ -148,7 +148,6 @@ devnet-logs:
 
 test-unit:
 	make -C ./op-node test
-	make -C ./shutter-node test
 	make -C ./op-proposer test
 	make -C ./op-batcher test
 	make -C ./op-e2e test

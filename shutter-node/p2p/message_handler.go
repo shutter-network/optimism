@@ -9,105 +9,171 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/pkg/errors"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/p2pmsg"
+	"github.com/shutter-network/shutter/shlib/shcrypto"
 
 	"github.com/ethereum-optimism/optimism/shutter-node/database/models"
-	"github.com/ethereum-optimism/optimism/shutter-node/keys"
+	"github.com/ethereum-optimism/optimism/shutter-node/database/query"
+	"github.com/ethereum-optimism/optimism/shutter-node/database/writer"
 	"github.com/ethereum-optimism/optimism/shutter-node/keys/identity"
 )
 
-func NewDecryptionKeyHandler(instanceID uint64, manager keys.Manager, logger log.Logger) *DecryptionKeyHandler {
-	c := manager.GetChannelNewEpoch()
+var (
+	ErrContainsNoKeys       = errors.New("message contained no decryption key")
+	ErrContainsMultipleKeys = errors.New("message contained more than one decryption key")
+)
+
+func getVerifyOneKey(msg *p2pmsg.DecryptionKeys) (*p2pmsg.Key, error) {
+	switch l := len(msg.Keys); l {
+	case 0:
+		return nil, ErrContainsNoKeys
+	case 1:
+		key := msg.Keys[0]
+		if key == nil {
+			return nil, errors.New("no key in message")
+		}
+		return key, nil
+	default:
+		return nil, ErrContainsMultipleKeys
+	}
+}
+
+func DecyptionKeysEventToModel(decrKeys *p2pmsg.DecryptionKeys) (*models.Epoch, error) {
+	key, err := getVerifyOneKey(decrKeys)
+	if err != nil {
+		return nil, err
+	}
+	sk, err := key.GetEpochSecretKey()
+	if err != nil {
+		return nil, err
+	}
+	idt := key.GetIdentity()
+	if idt == nil {
+		return nil, errors.New("no identity value")
+	}
+
+	idPreim, err := identity.BytesToPreimage(key.Identity)
+	if err != nil {
+		return nil, err
+	}
+	epoch := &models.Epoch{
+		EonIndex:  uint(decrKeys.Eon),
+		Identity:  &idPreim,
+		SecretKey: sk,
+		Block:     uint(idPreim.Uint64()),
+	}
+	return epoch, nil
+}
+
+func NewDecryptionKeyHandler(instanceID uint64, writer *writer.DBWriter, logger log.Logger) *DecryptionKeyHandler {
 	return &DecryptionKeyHandler{
-		InstanceID:   instanceID,
-		Manager:      manager,
-		newSecretKey: c,
-		log:          logger,
+		InstanceID: instanceID,
+		writer:     writer,
+		log:        logger,
 	}
 }
 
 // DecryptionKeyHandler listens for new decryption-keys.
 type DecryptionKeyHandler struct {
-	InstanceID   uint64
-	Manager      keys.Manager
-	newSecretKey chan<- *models.Epoch
-	log          log.Logger
+	InstanceID uint64
+	writer     *writer.DBWriter
+	log        log.Logger
 }
 
-func (h DecryptionKeyHandler) ValidateMessage(_ context.Context, msg p2pmsg.Message) (pubsub.ValidationResult, error) {
-	// NOCHECKIN:
+func (h DecryptionKeyHandler) ValidateMessage(ctx context.Context, msg p2pmsg.Message) (pubsub.ValidationResult, error) {
 	h.log.Info("received unvalidated message on DecryptionKeyHandler topic")
-	key := msg.(*p2pmsg.DecryptionKey)
-	if key.GetInstanceID() != h.InstanceID {
-		return pubsub.ValidationReject, errors.Errorf("instance ID mismatch (want=%d, have=%d)", h.InstanceID, key.GetInstanceID())
+	decrKeys := msg.(*p2pmsg.DecryptionKeys)
+	if decrKeys.GetInstanceID() != h.InstanceID {
+		return pubsub.ValidationReject, errors.Errorf("instance ID mismatch (want=%d, have=%d)", h.InstanceID, decrKeys.GetInstanceID())
 	}
-	if key.Eon > math.MaxInt64 {
-		return pubsub.ValidationReject, errors.Errorf("eon %d overflows int64", key.Eon)
+	if decrKeys.Eon > math.MaxInt64 {
+		return pubsub.ValidationReject, errors.Errorf("eon %d overflows int64", decrKeys.Eon)
 	}
 
-	// TODO: check for keyper set membership of the sender.
-	// FIXME: we can't do this, because the DecryptionKey message is not signed!
-	// h.KeyperSetManager.IsKeyperForEon(key)
-
-	epochSecretKey, err := key.GetEpochSecretKey()
+	epochSK, err := getVerifyOneKey(decrKeys)
 	if err != nil {
 		return pubsub.ValidationReject, err
 	}
-	epochId := key.GetEpochID()
-	h.log.Info("received decryption key", "eon", key.GetEon(), "epoch-id", hexutil.Encode(epochId))
-	_ = epochSecretKey
+
+	epochSecretKey, err := epochSK.GetEpochSecretKey()
+	if err != nil {
+		return pubsub.ValidationReject, err
+	}
+	identity := epochSK.GetIdentity()
+	if identity == nil {
+		return pubsub.ValidationReject, errors.New("no identity")
+	}
+	h.log.Info("received decryption key", "eon", decrKeys.GetEon(), "epoch-id", hexutil.Encode(identity))
+
+	// This does only validate that we know of "some" publickey belonging to a keyperset
+	// that will result in a successful roundtrip encryption.
+	// At this point we don't check that the keyperset is a currently active one
+	// or wether shutter is enabled at all
+	eonIndex := uint(decrKeys.Eon)
+
+	// create a new session for each handler call
+	// NOTE: This will be created for every receiving decryption key.
+	// Especially when multiple keypers are emitting the key, this might
+	// be called frequently in a short amount of time
+	db := h.writer.Session(ctx, h.log)
+	pk, err := query.GetPubKey(db, eonIndex)
+	if err != nil {
+		return pubsub.ValidationReject, err
+	}
+	if pk == nil || pk.Key == nil {
+		return pubsub.ValidationReject, errors.Errorf("no public-key known for eon %d", decrKeys.Eon)
+	}
+
+	eon, err := query.GetEonByIndex(db, eonIndex)
+	if err != nil {
+		return pubsub.ValidationReject, errors.Errorf("eon %d not retrievable", decrKeys.Eon)
+	}
+	if eon == nil {
+		return pubsub.ValidationReject, errors.Errorf("no eon %d known", decrKeys.Eon)
+	}
+
+	// TODO: check for keyper set membership of the sender.
+	// FIXME: currently we can't do this, because the DecryptionKey message is not signed!
+
+	ok, err := shcrypto.VerifyEpochSecretKey(epochSecretKey, pk.Key, identity)
+	if err != nil {
+		return pubsub.ValidationReject, errors.Wrapf(err, "error while checking epoch secret key for epoch %v", epochSK.Identity)
+	}
+	if !ok {
+		return pubsub.ValidationReject, errors.Wrapf(err, "epoch secret key for epoch %v is not valid", epochSK.Identity)
+	}
+	// TODO:
+	// in the specs it says that inserting the key into the DB is conditional on:
+	// we want to verify that the correct key was indeed belonging to the at that time
+	// active keyperset. and that shutter was enabled!
+	// Is this required?
+	// The problem is that this might be hard to synchronize with the
+	// arrival of the latest-head event.
+	// I think it is better to just insert the key, and then check for the eon
+	// being active during retrieval of the key (long polling, reader)
 	return pubsub.ValidationAccept, nil
-	// TODO: validate that we fulfill all eon preconditions for this..
-
-	// publicKey := h.Manager.GetPublicKey(key.Eon)
-	// if publicKey == nil {
-	// 	return pubsub.ValidationReject, errors.Errorf("no public-key known for eon %d", key.Eon)
-	// }
-
-	// ok, err := shcrypto.VerifyEpochSecretKey(epochSecretKey, publicKey, key.EpochID)
-	// if err != nil {
-	// 	return pubsub.ValidationReject, errors.Wrapf(err, "error while checking epoch secret key for epoch %v", key.EpochID)
-	// }
-	// if !ok {
-	// 	return pubsub.ValidationReject, errors.Wrapf(err, "epoch secret key for epoch %v is not valid", key.EpochID)
-	// }
-	// return pubsub.ValidationAccept, nil
 }
 
 func (h *DecryptionKeyHandler) HandleMessage(
 	ctx context.Context,
 	msg p2pmsg.Message,
 ) ([]p2pmsg.Message, error) {
-	key := msg.(*p2pmsg.DecryptionKey)
-	sk, err := key.GetEpochSecretKey()
+	decrKeys := msg.(*p2pmsg.DecryptionKeys)
+	epoch, err := DecyptionKeysEventToModel(decrKeys)
 	if err != nil {
-		// we did this already in the validator,
-		// so this shouldn't happen
+		return nil, errors.Wrap(err, "decode message to model")
+	}
+	h.log.Info("handling decryption-key", "epoch", epoch)
+	// this can be blocking until there is a slot for writing
+	// to the DB
+	err = h.writer.HandleNewEpoch(ctx, epoch)
+	if err != nil {
 		return nil, err
 	}
-	h.log.Info("handling decryption-key", "key")
-	idPreim, err := identity.BytesToPreimage(key.EpochID)
-	if err != nil {
-		return nil, err
-	}
-	// this is only partially filled with data
-	epoch := &models.Epoch{
-		Eon: models.Eon{
-			Index: uint(key.Eon),
-		},
-		Identity:  idPreim,
-		SecretKey: sk,
-	}
-
-	select {
-	case h.newSecretKey <- epoch:
-		return nil, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	return nil, nil
 }
 
 func (DecryptionKeyHandler) MessagePrototypes() []p2pmsg.Message {
 	return []p2pmsg.Message{
-		&p2pmsg.DecryptionKey{},
+		&p2pmsg.DecryptionKeys{},
 	}
 }

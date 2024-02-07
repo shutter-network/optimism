@@ -16,9 +16,9 @@ import (
 	"github.com/ethereum-optimism/optimism/op-service/httputil"
 	"github.com/ethereum-optimism/optimism/shutter-node/config"
 	"github.com/ethereum-optimism/optimism/shutter-node/database"
+	"github.com/ethereum-optimism/optimism/shutter-node/database/writer"
 	"github.com/ethereum-optimism/optimism/shutter-node/keys"
 	"github.com/ethereum-optimism/optimism/shutter-node/p2p"
-	"github.com/ethereum-optimism/optimism/shutter-node/rollup"
 	service "github.com/shutter-network/rolling-shutter/rolling-shutter/medley/service"
 	shp2p "github.com/shutter-network/rolling-shutter/rolling-shutter/p2p"
 )
@@ -32,7 +32,7 @@ type ShutterNode struct {
 
 	keyHandler *p2p.DecryptionKeyHandler
 	keyManager keys.Manager
-	syncer     *rollup.Syncer
+	writer     *writer.DBWriter
 	db         *database.Database
 
 	p2p    shp2p.Messaging
@@ -99,7 +99,7 @@ func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
-	n.syncer = rollup.NewL2Syncer(cfg.L2Sync.L2NodeAddr, n.log, n.keyManager, n.db)
+	n.writer = writer.NewDBWriter(cfg.L2Sync.L2NodeAddr, n.log, n.db)
 	if err := n.initP2P(ctx, cfg); err != nil {
 		return fmt.Errorf("failed to init the P2P stack: %w", err)
 	}
@@ -144,15 +144,17 @@ func (n *ShutterNode) initP2P(ctx context.Context, cfg *config.Config) error {
 		return err
 	}
 	n.p2p = mss
-	n.keyHandler = p2p.NewDecryptionKeyHandler(cfg.InstanceID, n.keyManager, n.log)
+	n.keyHandler = p2p.NewDecryptionKeyHandler(cfg.InstanceID, n.writer, n.log)
 	n.p2p.AddMessageHandler(n.keyHandler)
 	return nil
 }
 
+// TODO: this needs a revisit
 func (n *ShutterNode) Start(ctx context.Context) error {
-	n.errgrp = service.RunBackground(ctx, n.keyManager, n.syncer)
+	errgrp, teardown := service.RunBackground(ctx, n.keyManager, n.writer)
+	n.errgrp = errgrp
 	// XXX: the appCtx didn't seem to work for e.g. libp2p.
-	p2perrgrp := service.RunBackground(n.resourcesCtx, n.p2p)
+	p2perrgrp, teardown2 := service.RunBackground(n.resourcesCtx, n.p2p)
 	n.log.Info("Rollup node started")
 	go func() {
 		err := n.errgrp.Wait()
@@ -163,6 +165,8 @@ func (n *ShutterNode) Start(ctx context.Context) error {
 	}()
 
 	go func() {
+		defer teardown()
+		defer teardown2()
 		err := p2perrgrp.Wait()
 		n.log.Error("p2p errgroup wait returned", "error", err)
 		if err != nil {

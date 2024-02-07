@@ -1,38 +1,33 @@
 package models
 
-import (
-	"time"
+// ActiveUpdate is the "paused" / "unpaused"
+// update event.
+// It will get emitted in block Metadata.InsertBlock,
+// but the state it represents ("ActiveUpdate") will
+// only take effect at block Block,
+// or Metadata.InsertBlock + 1 respectively
+type ActiveUpdate struct {
+	Metadata
+	Block uint `gorm:"uniqueIndex"`
 
-	"gorm.io/gorm"
-)
-
-type Block struct {
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
-
-	Number uint   `gorm:"primarykey"`
-	Epoch  *Epoch // 1-to-1 relationship
+	Active bool
 }
 
-func (k *Block) ModelVersion() uint {
+func (k *ActiveUpdate) ModelVersion() uint {
 	return 1
 }
 
 type State struct {
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	DeletedAt   gorm.DeletedAt `gorm:"index"`
-	BlockNumber uint           `gorm:"primarykey"`
+	Metadata
+	Block uint `gorm:"uniqueIndex"`
 
-	// TODO: constraint: only one state can be the latest
-	// only when we confirm the block state this latest will get set
-	IsLatest  bool
-	IsPending bool `gorm:"default:true"`
+	Eon   *Eon
+	EonID *uint
 
-	// Null values mean this has not been set yet
-	EonIndex      *uint
-	ShutterActive *bool
+	Active bool
+
+	ActiveUpdate   ActiveUpdate
+	ActiveUpdateID uint
 }
 
 func (k *State) ModelVersion() uint {

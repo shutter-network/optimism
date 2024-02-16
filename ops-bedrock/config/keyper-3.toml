@@ -25,7 +25,7 @@ JSONRPCURL = 'ws://l2:8546/'
 
 [Shuttermint]
 ShuttermintURL		= "http://chain-3-validator:26657"
-ValidatorPublicKey = "79acab5169694e130cd1e9713270540e8dd8697d34f1c87e27be1a263062145e"
+ValidatorPublicKey = "3c53e7db4d236c6eb18d2d047696c376e4793a9a391ba269ca58e75e52c343dd"
 EncryptionKey = '2377fd4943e78a1f16dabb0584f6aacdb14f118fe37a5dbddf540a54b071c6c0'
 DKGPhaseLength = 8
 DKGStartBlockDelta = 200

@@ -24,7 +24,7 @@ PrivateKey = '782d0b4aadddccb120bd9b1cca705ef4f2ca5b9238ed606ed7b7595c9e36cc32'
 JSONRPCURL = 'ws://l2:8546/'
 
 [Shuttermint]
-ValidatorPublicKey = "bf2ab7a947f1103addb00a2d7f347a7486164ebc69e87b37e8ce22e2d2ff5b26"
+ValidatorPublicKey = "7d0f01b6a97f7120686341929a5846152a55d700ed0bcca1ff3cf0aa5712af0c"
 EncryptionKey = '143d929359b4168aea64a703bc566b872fb74762287c26e0d61d61ae02ab419a'
 ShuttermintURL		= "http://chain-0-validator:26657"
 DKGPhaseLength = 8

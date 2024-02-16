@@ -84,26 +84,20 @@ func (h *DecryptionKeyHandler) HandleMessage(
 		// so this shouldn't happen
 		return nil, err
 	}
-	h.log.Info("handling decryption-key", "key")
 	idPreim, err := identity.BytesToPreimage(key.EpochID)
+	h.log.Info("handling decryption-key", "key", hexutil.Encode(sk.Marshal()), "epoch", idPreim.String())
 	if err != nil {
 		return nil, err
 	}
 	// this is only partially filled with data
-	epoch := &models.Epoch{
+	_ = &models.Epoch{
 		Eon: models.Eon{
 			Index: uint(key.Eon),
 		},
 		Identity:  idPreim,
 		SecretKey: sk,
 	}
-
-	select {
-	case h.newSecretKey <- epoch:
-		return nil, nil
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	return nil, nil
 }
 
 func (DecryptionKeyHandler) MessagePrototypes() []p2pmsg.Message {

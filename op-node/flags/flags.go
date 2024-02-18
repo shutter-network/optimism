@@ -278,6 +278,7 @@ var requiredFlags = []cli.Flag{
 }
 
 var optionalFlags = []cli.Flag{
+	ShutterGRPCAddress,
 	RPCListenAddr,
 	RPCListenPort,
 	RollupConfig,

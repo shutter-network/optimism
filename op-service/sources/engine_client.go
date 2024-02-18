@@ -68,8 +68,10 @@ func (s *EngineClient) ForkchoiceUpdate(ctx context.Context, fc *eth.ForkchoiceS
 		llog.Warn("Failed to share forkchoice-updated signal", "err", err)
 		if rpcErr, ok := err.(rpc.Error); ok {
 			code := eth.ErrorCode(rpcErr.ErrorCode())
+			// TODO: add the shutter error - codes here, otherwise
+			// we get an unrecognized rpc error
 			switch code {
-			case eth.InvalidForkchoiceState, eth.InvalidPayloadAttributes:
+			case eth.InvalidForkchoiceState, eth.InvalidPayloadAttributes, eth.InvalidShutterState:
 				return nil, eth.InputError{
 					Inner: err,
 					Code:  code,

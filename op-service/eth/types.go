@@ -20,6 +20,7 @@ const (
 	UnknownPayload           ErrorCode = -32001 // Payload does not exist / is not available.
 	InvalidForkchoiceState   ErrorCode = -38002 // Forkchoice state is invalid / inconsistent.
 	InvalidPayloadAttributes ErrorCode = -38003 // Payload attributes are invalid / inconsistent.
+	InvalidShutterState      ErrorCode = -38100 // Shutter state / stf result is invalid
 )
 
 // InputError distinguishes an user-input error from regular rpc errors,
@@ -258,6 +259,9 @@ type PayloadAttributes struct {
 	NoTxPool bool `json:"noTxPool,omitempty"`
 	// GasLimit override
 	GasLimit *Uint64Quantity `json:"gasLimit,omitempty"`
+
+	// DecryptionKey
+	DecryptionKey *hexutil.Bytes `json:"decryptionKey,omitempty"`
 }
 
 type ExecutePayloadStatus string

@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
+	"github.com/ethereum-optimism/optimism/op-node/shutter"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 )
 
@@ -36,6 +37,8 @@ type Sequencer struct {
 
 	engine derive.ResettableEngineControl
 
+	shutter *shutter.Engine
+
 	attrBuilder      derive.AttributesBuilder
 	l1OriginSelector L1OriginSelectorIface
 
@@ -47,7 +50,7 @@ type Sequencer struct {
 	nextAction time.Time
 }
 
-func NewSequencer(log log.Logger, cfg *rollup.Config, engine derive.ResettableEngineControl, attributesBuilder derive.AttributesBuilder, l1OriginSelector L1OriginSelectorIface, metrics SequencerMetrics) *Sequencer {
+func NewSequencer(log log.Logger, cfg *rollup.Config, engine derive.ResettableEngineControl, attributesBuilder derive.AttributesBuilder, l1OriginSelector L1OriginSelectorIface, metrics SequencerMetrics, shutterEngine *shutter.Engine) *Sequencer {
 	return &Sequencer{
 		log:              log,
 		config:           cfg,
@@ -56,6 +59,7 @@ func NewSequencer(log log.Logger, cfg *rollup.Config, engine derive.ResettableEn
 		attrBuilder:      attributesBuilder,
 		l1OriginSelector: l1OriginSelector,
 		metrics:          metrics,
+		shutter:          shutterEngine,
 	}
 }
 
@@ -77,12 +81,21 @@ func (d *Sequencer) StartBuildingBlock(ctx context.Context) error {
 
 	d.log.Info("creating new block", "parent", l2Head, "l1Origin", l1Origin)
 
+	// XXX: shutter: here the payload attributes are fetched, with a 20 second timeout!
+	// --> the decryption key is part of the payload attrs
 	fetchCtx, cancel := context.WithTimeout(ctx, time.Second*20)
 	defer cancel()
 
 	attrs, err := d.attrBuilder.PreparePayloadAttributes(fetchCtx, l2Head, l1Origin.ID())
 	if err != nil {
 		return err
+	}
+	if d.shutter != nil {
+		attrsWithShutter, err := d.shutter.PreparePayloadAttributes(fetchCtx, attrs, l2Head, l1Origin.ID())
+		if err != nil {
+			return err
+		}
+		attrs = attrsWithShutter
 	}
 
 	// If our next L2 block timestamp is beyond the Sequencer drift threshold, then we must produce
@@ -97,6 +110,9 @@ func (d *Sequencer) StartBuildingBlock(ctx context.Context) error {
 
 	// Start a payload building process.
 	errTyp, err := d.engine.StartPayload(ctx, l2Head, attrs, false)
+	if d.shutter != nil {
+		d.shutter.RegisterPayloadResult(errTyp, err, l2Head, attrs)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to start building on top of L2 chain %s, error (%d): %w", l2Head, errTyp, err)
 	}
@@ -204,6 +220,9 @@ func (d *Sequencer) RunNextSequencerAction(ctx context.Context) (*eth.ExecutionP
 			d.nextAction = d.timeNow().Add(time.Second * time.Duration(d.config.BlockTime))
 			return nil, nil
 		}
+		// TODO: we could also fail here and let the stf handle the shutter stuff
+		// I think we HAVE to also handle errors here, e.g. if the key is invalid (edgecase)
+		// FIXME: here it complains that the first transaction is not a deposit one
 		payload, err := d.CompleteBuildingBlock(ctx)
 		if err != nil {
 			if errors.Is(err, derive.ErrCritical) {
@@ -232,6 +251,8 @@ func (d *Sequencer) RunNextSequencerAction(ctx context.Context) (*eth.ExecutionP
 	} else {
 		err := d.StartBuildingBlock(ctx)
 		if err != nil {
+			// TODO: if we want faster retries, we could introduce a specific shutter-statechange error
+			// else if condition here and then use a shorter time for d.nextAction
 			if errors.Is(err, derive.ErrCritical) {
 				return nil, err
 			} else if errors.Is(err, derive.ErrReset) {

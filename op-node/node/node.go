@@ -112,6 +112,9 @@ func (n *OpNode) init(ctx context.Context, cfg *Config, snapshotLog log.Logger) 
 	if err := n.initL1(ctx, cfg); err != nil {
 		return fmt.Errorf("failed to init L1: %w", err)
 	}
+	if err := n.initShutter(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to init the shutter client: %w", err)
+	}
 	if err := n.initL2(ctx, cfg, snapshotLog); err != nil {
 		return fmt.Errorf("failed to init L2: %w", err)
 	}
@@ -133,9 +136,6 @@ func (n *OpNode) init(ctx context.Context, cfg *Config, snapshotLog log.Logger) 
 	}
 	if err := n.initMetricsServer(cfg); err != nil {
 		return fmt.Errorf("failed to init the metrics server: %w", err)
-	}
-	if err := n.initShutter(ctx, cfg); err != nil {
-		return fmt.Errorf("failed to init the shutter client: %w", err)
 	}
 	n.metrics.RecordInfo(n.appVersion)
 	n.metrics.RecordUp()
@@ -309,10 +309,7 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 		return err
 	}
 
-	// TODO: the driver needs to receive the
-	// decryption keys and also initiate new "subscriptions" whenever it
-	// receives a shutter-active error from the engine
-	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync)
+	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync, n.shutter)
 
 	return nil
 }
@@ -320,7 +317,11 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 func (n *OpNode) initShutter(ctx context.Context, cfg *Config) error {
 	c, err := cfg.Shutter.Setup()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to setup shutter grpc-client condig: %w", err)
+	}
+	err = c.Init(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to init shutter grpc-client: %w", err)
 	}
 	n.shutter = c
 	return nil

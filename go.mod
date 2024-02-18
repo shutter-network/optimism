@@ -44,7 +44,7 @@ require (
 	github.com/prometheus/client_golang v1.17.0
 	github.com/shutter-network/rolling-shutter/rolling-shutter v0.0.7
 	github.com/shutter-network/shop-contracts v0.0.1
-	github.com/shutter-network/shutter/shlib v0.1.13
+	github.com/shutter-network/shutter/shlib v0.1.15
 	github.com/stretchr/testify v1.8.4
 	github.com/urfave/cli/v2 v2.25.7
 	golang.org/x/crypto v0.15.0
@@ -255,10 +255,12 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-//XXX: will 1.13.5 work with the older op-geth?
-replace github.com/ethereum/go-ethereum v1.13.5 => github.com/ethereum-optimism/op-geth v1.101304.0-rc.2.0.20231030225546-cd491fa3b588
+// NOTE: our op-geth fork should ideally have the fork-base of the corresponding optimism op-geth commit:
+// (cd491fa3b588)
 
-//replace github.com/ethereum/go-ethereum v1.13.5 => ./packages/op-geth/
+replace github.com/ethereum/go-ethereum v1.13.5 => ./packages/op-geth/
+
+// replace github.com/ethereum/go-ethereum v1.13.5 => github.com/ethereum-optimism/op-geth v1.101304.0-rc.2.0.20231030225546-cd491fa3b588
 
 //replace github.com/ethereum-optimism/superchain-registry/superchain => ../superchain-registry/superchain
 //replace github.com/ethereum/go-ethereum v1.13.1 => ../go-ethereum

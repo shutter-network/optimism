@@ -6,6 +6,8 @@ import (
 	"math/big"
 	"time"
 
+	shpredeploys "github.com/shutter-network/shop-contracts/predeploy"
+
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -92,6 +94,14 @@ func NewL2Genesis(config *DeployConfig, block *types.Block) (*core.Genesis, erro
 	// Ensure that the extradata is valid
 	if size := len(extraData); size > 32 {
 		return nil, fmt.Errorf("transition block extradata too long: %d", size)
+	}
+
+	if config.EnableShutter {
+		optimismChainConfig.Shutter = &params.ShutterConfig{
+			KeyperSetManagerAddress:     shpredeploys.KeyperSetManagerAddr,
+			KeyBroadcastContractAddress: shpredeploys.KeyBroadcastContractAddr,
+			InboxAddress:                shpredeploys.InboxAddr,
+		}
 	}
 
 	return &core.Genesis{

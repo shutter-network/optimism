@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	shpredeploys "github.com/shutter-network/shop-contracts/predeploy"
 
 	"github.com/ethereum-optimism/optimism/op-bindings/predeploys"
 	"github.com/ethereum-optimism/optimism/op-chain-ops/immutables"
@@ -49,7 +50,6 @@ func BuildL2Genesis(config *DeployConfig, l1StartBlock *types.Block) (*core.Gene
 	if err != nil {
 		return nil, err
 	}
-	// TODO: shutter predeploy
 	for name, predeploy := range predeploys.Predeploys {
 		addr := *predeploy
 		if addr == predeploys.GovernanceTokenAddr && !config.EnableGovernance {
@@ -57,25 +57,17 @@ func BuildL2Genesis(config *DeployConfig, l1StartBlock *types.Block) (*core.Gene
 			log.Warn("Governance is not enabled, skipping governance token predeploy.")
 			continue
 		}
-		// TODO: skip predeploys if shutter is not enabled
+		switch addr {
+		case shpredeploys.KeyperSetManagerAddr, shpredeploys.InboxAddr, shpredeploys.KeyBroadcastContractAddr:
+			if !config.EnableShutter {
+				// shutter not configured, so skip shutter predeploys
+				log.Warn(fmt.Sprintf("Shutter is not enabled, skipping %s predeploy.", name))
+				continue
+			}
+		// TODO: add to the genesis
+		default:
+		}
 		codeAddr := addr
-		// XXX: shutter is a proxy currently
-		// From the bedrock contract
-		// ### Proxy by Default
-		//
-		// All contracts should be assumed to live behind proxies (except in certain special circumstances).
-		// This means that new contracts MUST be built under the assumption of upgradeability.
-		// We use a minimal [`Proxy`](./contracts/universal/Proxy.sol) contract designed to be owned by a
-		// corresponding [`ProxyAdmin`](./contracts/universal/ProxyAdmin.sol) which follow the interfaces
-		// of OpenZeppelin's `Proxy` and `ProxyAdmin` contracts, respectively.
-		//
-		// Unless explicitly discussed otherwise, you MUST include the following basic upgradeability
-		// pattern for each new implementation contract:
-		//
-		// 1. Extend OpenZeppelin's `Initializable` base contract.
-		// 2. Include a `uint8 public constant VERSION = X` at the TOP of your contract.
-		// 3. Include a function `initialize` with the modifier `reinitializer(VERSION)`.
-		// 4. In the `constructor`, set any `immutable` variables and call the `initialize` function for setting mutables.
 		if predeploys.IsProxied(addr) {
 			codeAddr, err = AddressToCodeNamespace(addr)
 			if err != nil {

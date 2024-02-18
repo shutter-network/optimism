@@ -24,14 +24,19 @@ func AttributesMatchBlock(attrs *eth.PayloadAttributes, parentHash common.Hash, 
 	if attrs.PrevRandao != block.PrevRandao {
 		return fmt.Errorf("random field does not match. expected: %v. got: %v", attrs.PrevRandao, block.PrevRandao)
 	}
-	if len(attrs.Transactions) != len(block.Transactions) {
-		return fmt.Errorf("transaction count does not match. expected: %d. got: %d", len(attrs.Transactions), len(block.Transactions))
+	blockTransactionsWithoutReveal := block.Transactions[:]
+	if block.Transactions[0][0] == types.RevealTxType {
+		blockTransactionsWithoutReveal = block.Transactions[1:]
+	}
+	if len(attrs.Transactions) != len(blockTransactionsWithoutReveal) {
+		return fmt.Errorf("transaction count does not match. expected: %d. got: %d", len(attrs.Transactions), len(blockTransactionsWithoutReveal))
 	}
 	for i, otx := range attrs.Transactions {
-		if expect := block.Transactions[i]; !bytes.Equal(otx, expect) {
+		if expect := blockTransactionsWithoutReveal[i]; !bytes.Equal(otx, expect) {
 			if i == 0 {
 				logL1InfoTxns(l, uint64(block.BlockNumber), uint64(block.Timestamp), otx, block.Transactions[i])
 			}
+			// FIXME: add offset to log
 			return fmt.Errorf("transaction %d does not match. expected: %v. got: %v", i, expect, otx)
 		}
 	}

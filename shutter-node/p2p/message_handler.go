@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"math"
+    "strconv"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
@@ -85,7 +86,8 @@ func (h *DecryptionKeyHandler) HandleMessage(
 		return nil, err
 	}
 	idPreim, err := identity.BytesToPreimage(key.EpochID)
-	h.log.Info("handling decryption-key", "key", hexutil.Encode(sk.Marshal()), "epoch", idPreim.String())
+    epochNum, err := strconv.ParseInt(idPreim.String(), 16, 64)
+	h.log.Info("handling decryption-key", "key", hexutil.Encode(sk.Marshal()), "epoch", epochNum)
 	if err != nil {
 		return nil, err
 	}

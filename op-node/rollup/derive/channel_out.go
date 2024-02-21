@@ -13,9 +13,11 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
-var ErrMaxFrameSizeTooSmall = errors.New("maxSize is too small to fit the fixed frame overhead")
-var ErrNotDepositTx = errors.New("first transaction in block is not a deposit tx")
-var ErrTooManyRLPBytes = errors.New("batch would cause RLP bytes to go over limit")
+var (
+	ErrMaxFrameSizeTooSmall = errors.New("maxSize is too small to fit the fixed frame overhead")
+	ErrNotDepositTx         = errors.New("first transaction in block is not a deposit tx")
+	ErrTooManyRLPBytes      = errors.New("batch would cause RLP bytes to go over limit")
+)
 
 // FrameV0OverHeadSize is the absolute minimum size of a frame.
 // This is the fixed overhead frame size, calculated as specified
@@ -237,7 +239,11 @@ func BlockToSingularBatch(block *types.Block) (*SingularBatch, L1BlockInfo, erro
 	if len(block.Transactions()) == 0 {
 		return nil, L1BlockInfo{}, fmt.Errorf("block %v has no transactions", block.Hash())
 	}
-	l1InfoTx := block.Transactions()[0]
+	l1InfoIdx := 0
+	if block.Transactions()[0].Type() == types.RevealTxType {
+		l1InfoIdx = 1
+	}
+	l1InfoTx := block.Transactions()[l1InfoIdx]
 	if l1InfoTx.Type() != types.DepositTxType {
 		return nil, L1BlockInfo{}, ErrNotDepositTx
 	}

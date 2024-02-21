@@ -83,7 +83,6 @@ type DerivationPipeline struct {
 
 // NewDerivationPipeline creates a derivation pipeline, which should be reset before use.
 func NewDerivationPipeline(log log.Logger, cfg *rollup.Config, l1Fetcher L1Fetcher, engine Engine, metrics Metrics, syncCfg *sync.Config) *DerivationPipeline {
-
 	// Pull stages
 	l1Traversal := NewL1Traversal(log, cfg, l1Fetcher)
 	dataSrc := NewDataSourceFactory(log, cfg, l1Fetcher) // auxiliary stage for L1Retrieval

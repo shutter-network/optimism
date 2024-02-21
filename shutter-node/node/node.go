@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum-optimism/optimism/shutter-node/config"
 	"github.com/ethereum-optimism/optimism/shutter-node/database"
 	"github.com/ethereum-optimism/optimism/shutter-node/database/writer"
+	"github.com/ethereum-optimism/optimism/shutter-node/grpc/v1/server"
 	"github.com/ethereum-optimism/optimism/shutter-node/keys"
 	"github.com/ethereum-optimism/optimism/shutter-node/p2p"
 	service "github.com/shutter-network/rolling-shutter/rolling-shutter/medley/service"
@@ -34,6 +35,7 @@ type ShutterNode struct {
 	keyManager keys.Manager
 	writer     *writer.DBWriter
 	db         *database.Database
+	grpc       *server.Server
 
 	p2p    shp2p.Messaging
 	errgrp *errgroup.Group
@@ -106,6 +108,9 @@ func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
 	if err := n.initMetricsServer(cfg); err != nil {
 		return fmt.Errorf("failed to init the metrics server: %w", err)
 	}
+	if err := n.initGRPCServer(cfg, n.log); err != nil {
+		return fmt.Errorf("failed to open grpc server: %w", err)
+	}
 	n.metrics.RecordInfo(n.appVersion)
 	n.metrics.RecordUp()
 	return nil
@@ -114,10 +119,25 @@ func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
 func (n *ShutterNode) initDatabase(cfg *config.Config) error {
 	db := &database.Database{}
 	// TODO: make file configurable
-	if err := db.Connect("test.db"); err != nil {
+	if err := db.Connect("shutter.db"); err != nil {
 		return err
 	}
 	n.db = db
+	return nil
+}
+
+func (n *ShutterNode) initGRPCServer(cfg *config.Config, log log.Logger) error {
+	grpc, err := server.NewServer(
+		// TODO: make invoke-order independent
+		n.keyManager.RequestDecryptionKey,
+		server.WithLogger(log),
+		// TODO: make address configurable
+		server.WithListenAddress("tcp", ":8282"),
+	)
+	if err != nil {
+		return err
+	}
+	n.grpc = grpc
 	return nil
 }
 
@@ -151,7 +171,7 @@ func (n *ShutterNode) initP2P(ctx context.Context, cfg *config.Config) error {
 
 // TODO: this needs a revisit
 func (n *ShutterNode) Start(ctx context.Context) error {
-	errgrp, teardown := service.RunBackground(ctx, n.keyManager, n.writer)
+	errgrp, teardown := service.RunBackground(ctx, n.keyManager, n.writer, n.grpc)
 	n.errgrp = errgrp
 	// XXX: the appCtx didn't seem to work for e.g. libp2p.
 	p2perrgrp, teardown2 := service.RunBackground(n.resourcesCtx, n.p2p)

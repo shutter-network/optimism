@@ -442,6 +442,8 @@ func (eq *EngineQueue) tryUpdateEngine(ctx context.Context) error {
 		var inputErr eth.InputError
 		if errors.As(err, &inputErr) {
 			switch inputErr.Code {
+			case eth.InvalidShutterState:
+				return NewResetError(fmt.Errorf("forkchoice update shutter state was inconsistent with engine, need reset to resolve: %w", inputErr.Unwrap()))
 			case eth.InvalidForkchoiceState:
 				return NewResetError(fmt.Errorf("forkchoice update was inconsistent with engine, need reset to resolve: %w", inputErr.Unwrap()))
 			default:
@@ -526,6 +528,8 @@ func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 		var inputErr eth.InputError
 		if errors.As(err, &inputErr) {
 			switch inputErr.Code {
+			case eth.InvalidShutterState:
+				return NewResetError(fmt.Errorf("shutter invalid state in forkchoice-updated response: %w", err))
 			case eth.InvalidForkchoiceState:
 				return NewResetError(fmt.Errorf("pre-unsafe-block forkchoice update was inconsistent with engine, need reset to resolve: %w", inputErr.Unwrap()))
 			default:

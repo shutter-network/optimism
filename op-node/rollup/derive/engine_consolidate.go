@@ -34,7 +34,7 @@ func AttributesMatchBlock(attrs *eth.PayloadAttributes, parentHash common.Hash, 
 	for i, otx := range attrs.Transactions {
 		if expect := blockTransactionsWithoutReveal[i]; !bytes.Equal(otx, expect) {
 			if i == 0 {
-				logL1InfoTxns(l, uint64(block.BlockNumber), uint64(block.Timestamp), otx, block.Transactions[i])
+				logL1InfoTxns(l, uint64(block.BlockNumber), uint64(block.Timestamp), otx, blockTransactionsWithoutReveal[i])
 			}
 			// FIXME: add offset to log
 			return fmt.Errorf("transaction %d does not match. expected: %v. got: %v", i, expect, otx)

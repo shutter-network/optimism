@@ -147,7 +147,6 @@ func ConfirmPayload(ctx context.Context, log log.Logger, eng Engine, fc eth.Fork
 		// even if it is an input-error (unknown payload ID), it is temporary, since we will re-attempt the full payload building, not just the retrieval of the payload.
 		return nil, BlockInsertTemporaryErr, fmt.Errorf("failed to get execution payload: %w", err)
 	}
-	// FIXME: we get payloads that fail here because of the deposit transactions
 	if err := sanityCheckPayload(payload); err != nil {
 		return nil, BlockInsertPayloadErr, err
 	}

@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package protos.v1;
+
+option go_package = "./grpc";
+
+message DecryptionKey {
+  uint64 block = 1;
+  bool active = 2;
+  optional bytes key = 3;
+}
+
+service DecryptionKeyService {
+  rpc DecryptionKey(DecryptionKeyRequest) returns (stream DecryptionKeyResponse) {}
+  rpc GetDecryptionKey(GetDecryptionKeyRequest) returns (GetDecryptionKeyResponse) {}
+}
+
+message GetDecryptionKeyRequest {
+  uint64 block = 1;
+}
+
+message GetDecryptionKeyResponse {
+  DecryptionKey decryption_key = 1;
+}
+
+message DecryptionKeyRequest {
+  uint64 start_block = 1;
+  optional bool return_nearest = 2;
+  optional bool stop_on_inactive = 3;
+}
+
+message DecryptionKeyResponse {
+  uint64 counter = 1;
+  DecryptionKey decryption_key = 2;
+}

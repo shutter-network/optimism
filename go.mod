@@ -52,6 +52,7 @@ require (
 	golang.org/x/sync v0.5.0
 	golang.org/x/term v0.14.0
 	golang.org/x/time v0.4.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17
 	google.golang.org/grpc v1.61.0
 	google.golang.org/protobuf v1.31.0
 	gorm.io/driver/postgres v1.5.4
@@ -246,7 +247,6 @@ require (
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.14.0 // indirect
 	gonum.org/v1/gonum v0.13.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20231106174013-bbf56f31fb17 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect

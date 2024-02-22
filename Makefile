@@ -192,3 +192,20 @@ install-geth:
  			go install -v github.com/ethereum/go-ethereum/cmd/geth@$(shell cat .gethrc); \
  			echo "Installed geth!"; true)
 .PHONY: install-geth
+
+dev-sepolia-up: pre-devnet
+	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/devnet/sepolia.py --monorepo-dir=. --l1-rpc=${L1_RPC_URL}
+.PHONY: dev-sepolia-up
+
+dev-sepolia-clean:
+	rm -rf ./packages/contracts-bedrock/deployments/dev-sepolia
+	rm -rf ./.devnet
+	rm ./packages/contracts-bedrock/deploy-config/dev-sepolia.json
+	cd ./ops-bedrock && docker compose --profile shutter down
+	docker image ls 'ops-bedrock*' --format='{{.Repository}}' | xargs -r docker rmi
+	docker volume ls --filter name=ops-bedrock --format='{{.Name}}' | xargs -r docker volume rm
+.PHONY: dev-sepolia-clean
+
+dev-sepolia-down:
+	@(cd ./ops-bedrock && GENESIS_TIMESTAMP=$(shell date +%s) docker compose --profile shutter stop)
+.PHONY: dev-sepolia-down

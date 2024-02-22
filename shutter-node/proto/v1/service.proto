@@ -11,7 +11,6 @@ message DecryptionKey {
 }
 
 service DecryptionKeyService {
-  rpc DecryptionKey(DecryptionKeyRequest) returns (stream DecryptionKeyResponse) {}
   rpc GetDecryptionKey(GetDecryptionKeyRequest) returns (GetDecryptionKeyResponse) {}
 }
 
@@ -21,15 +20,4 @@ message GetDecryptionKeyRequest {
 
 message GetDecryptionKeyResponse {
   DecryptionKey decryption_key = 1;
-}
-
-message DecryptionKeyRequest {
-  uint64 start_block = 1;
-  optional bool return_nearest = 2;
-  optional bool stop_on_inactive = 3;
-}
-
-message DecryptionKeyResponse {
-  uint64 counter = 1;
-  DecryptionKey decryption_key = 2;
 }

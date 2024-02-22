@@ -19,7 +19,7 @@ test:
 
 # fuzz:
 
-generate-mocks:
+generate:
 	go generate ./...
 
 .PHONY: \

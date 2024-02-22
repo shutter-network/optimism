@@ -19,7 +19,6 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	DecryptionKeyService_DecryptionKey_FullMethodName    = "/protos.v1.DecryptionKeyService/DecryptionKey"
 	DecryptionKeyService_GetDecryptionKey_FullMethodName = "/protos.v1.DecryptionKeyService/GetDecryptionKey"
 )
 
@@ -27,7 +26,6 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type DecryptionKeyServiceClient interface {
-	DecryptionKey(ctx context.Context, in *DecryptionKeyRequest, opts ...grpc.CallOption) (DecryptionKeyService_DecryptionKeyClient, error)
 	GetDecryptionKey(ctx context.Context, in *GetDecryptionKeyRequest, opts ...grpc.CallOption) (*GetDecryptionKeyResponse, error)
 }
 
@@ -37,38 +35,6 @@ type decryptionKeyServiceClient struct {
 
 func NewDecryptionKeyServiceClient(cc grpc.ClientConnInterface) DecryptionKeyServiceClient {
 	return &decryptionKeyServiceClient{cc}
-}
-
-func (c *decryptionKeyServiceClient) DecryptionKey(ctx context.Context, in *DecryptionKeyRequest, opts ...grpc.CallOption) (DecryptionKeyService_DecryptionKeyClient, error) {
-	stream, err := c.cc.NewStream(ctx, &DecryptionKeyService_ServiceDesc.Streams[0], DecryptionKeyService_DecryptionKey_FullMethodName, opts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &decryptionKeyServiceDecryptionKeyClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-type DecryptionKeyService_DecryptionKeyClient interface {
-	Recv() (*DecryptionKeyResponse, error)
-	grpc.ClientStream
-}
-
-type decryptionKeyServiceDecryptionKeyClient struct {
-	grpc.ClientStream
-}
-
-func (x *decryptionKeyServiceDecryptionKeyClient) Recv() (*DecryptionKeyResponse, error) {
-	m := new(DecryptionKeyResponse)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
 }
 
 func (c *decryptionKeyServiceClient) GetDecryptionKey(ctx context.Context, in *GetDecryptionKeyRequest, opts ...grpc.CallOption) (*GetDecryptionKeyResponse, error) {
@@ -84,7 +50,6 @@ func (c *decryptionKeyServiceClient) GetDecryptionKey(ctx context.Context, in *G
 // All implementations must embed UnimplementedDecryptionKeyServiceServer
 // for forward compatibility
 type DecryptionKeyServiceServer interface {
-	DecryptionKey(*DecryptionKeyRequest, DecryptionKeyService_DecryptionKeyServer) error
 	GetDecryptionKey(context.Context, *GetDecryptionKeyRequest) (*GetDecryptionKeyResponse, error)
 	mustEmbedUnimplementedDecryptionKeyServiceServer()
 }
@@ -93,9 +58,6 @@ type DecryptionKeyServiceServer interface {
 type UnimplementedDecryptionKeyServiceServer struct {
 }
 
-func (UnimplementedDecryptionKeyServiceServer) DecryptionKey(*DecryptionKeyRequest, DecryptionKeyService_DecryptionKeyServer) error {
-	return status.Errorf(codes.Unimplemented, "method DecryptionKey not implemented")
-}
 func (UnimplementedDecryptionKeyServiceServer) GetDecryptionKey(context.Context, *GetDecryptionKeyRequest) (*GetDecryptionKeyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetDecryptionKey not implemented")
 }
@@ -110,27 +72,6 @@ type UnsafeDecryptionKeyServiceServer interface {
 
 func RegisterDecryptionKeyServiceServer(s grpc.ServiceRegistrar, srv DecryptionKeyServiceServer) {
 	s.RegisterService(&DecryptionKeyService_ServiceDesc, srv)
-}
-
-func _DecryptionKeyService_DecryptionKey_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(DecryptionKeyRequest)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(DecryptionKeyServiceServer).DecryptionKey(m, &decryptionKeyServiceDecryptionKeyServer{stream})
-}
-
-type DecryptionKeyService_DecryptionKeyServer interface {
-	Send(*DecryptionKeyResponse) error
-	grpc.ServerStream
-}
-
-type decryptionKeyServiceDecryptionKeyServer struct {
-	grpc.ServerStream
-}
-
-func (x *decryptionKeyServiceDecryptionKeyServer) Send(m *DecryptionKeyResponse) error {
-	return x.ServerStream.SendMsg(m)
 }
 
 func _DecryptionKeyService_GetDecryptionKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
@@ -163,12 +104,6 @@ var DecryptionKeyService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DecryptionKeyService_GetDecryptionKey_Handler,
 		},
 	},
-	Streams: []grpc.StreamDesc{
-		{
-			StreamName:    "DecryptionKey",
-			Handler:       _DecryptionKeyService_DecryptionKey_Handler,
-			ServerStreams: true,
-		},
-	},
+	Streams:  []grpc.StreamDesc{},
 	Metadata: "v1/service.proto",
 }

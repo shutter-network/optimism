@@ -28,6 +28,7 @@ import (
 	oppprof "github.com/ethereum-optimism/optimism/op-service/pprof"
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
+	shclient "github.com/ethereum-optimism/optimism/shutter-node/grpc/v1/client"
 )
 
 type OpNode struct {
@@ -48,6 +49,7 @@ type OpNode struct {
 	p2pSigner p2p.Signer            // p2p gogssip application messages will be signed with this signer
 	tracer    Tracer                // tracer to get events for testing/debugging
 	runCfg    *RuntimeConfig        // runtime configurables
+	shutter   *shclient.Client
 
 	rollupHalt string // when to halt the rollup, disabled if empty
 
@@ -131,6 +133,9 @@ func (n *OpNode) init(ctx context.Context, cfg *Config, snapshotLog log.Logger) 
 	}
 	if err := n.initMetricsServer(cfg); err != nil {
 		return fmt.Errorf("failed to init the metrics server: %w", err)
+	}
+	if err := n.initShutter(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to init the shutter client: %w", err)
 	}
 	n.metrics.RecordInfo(n.appVersion)
 	n.metrics.RecordUp()
@@ -304,8 +309,20 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 		return err
 	}
 
+	// TODO: the driver needs to receive the
+	// decryption keys and also initiate new "subscriptions" whenever it
+	// receives a shutter-active error from the engine
 	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync)
 
+	return nil
+}
+
+func (n *OpNode) initShutter(ctx context.Context, cfg *Config) error {
+	c, err := cfg.Shutter.Setup()
+	if err != nil {
+		return err
+	}
+	n.shutter = c
 	return nil
 }
 
@@ -612,6 +629,9 @@ func (n *OpNode) Stop(ctx context.Context) error {
 		n.l1Source.Close()
 	}
 
+	if n.shutter != nil {
+		n.shutter.Close()
+	}
 	if result == nil { // mark as closed if we successfully fully closed
 		n.closed.Store(true)
 	}

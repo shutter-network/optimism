@@ -70,13 +70,15 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 	if haltOption == "none" {
 		haltOption = ""
 	}
+	shutter := NewShutterConfig(ctx)
 
 	cfg := &node.Config{
-		L1:     l1Endpoint,
-		L2:     l2Endpoint,
-		L2Sync: l2SyncEndpoint,
-		Rollup: *rollupConfig,
-		Driver: *driverConfig,
+		Shutter: shutter,
+		L1:      l1Endpoint,
+		L2:      l2Endpoint,
+		L2Sync:  l2SyncEndpoint,
+		Rollup:  *rollupConfig,
+		Driver:  *driverConfig,
 		RPC: node.RPCConfig{
 			ListenAddr:  ctx.String(flags.RPCListenAddr.Name),
 			ListenPort:  ctx.Int(flags.RPCListenPort.Name),

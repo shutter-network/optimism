@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
+	"github.com/ethereum-optimism/optimism/op-node/shutter"
 	oppprof "github.com/ethereum-optimism/optimism/op-service/pprof"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -63,6 +64,8 @@ type Config struct {
 
 	// [OPTIONAL] The reth DB path to read receipts from
 	RethDBPath string
+
+	Shutter shutter.Config
 }
 
 type RPCConfig struct {
@@ -141,6 +144,10 @@ func (cfg *Config) Check() error {
 	}
 	if !(cfg.RollupHalt == "" || cfg.RollupHalt == "major" || cfg.RollupHalt == "minor" || cfg.RollupHalt == "patch") {
 		return fmt.Errorf("invalid rollup halting option: %q", cfg.RollupHalt)
+	}
+
+	if err := cfg.Shutter.Check(); err != nil {
+		return fmt.Errorf("shutter config error: %w", err)
 	}
 	return nil
 }

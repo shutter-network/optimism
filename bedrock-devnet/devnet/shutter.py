@@ -82,7 +82,7 @@ class Shutter:
                 "PRIVATE_KEY": "0x83b6122c38b58e37ce42adafd43e7b402e19f4413ce6de9dc9219f50d71c3768",
                 "KEYPER_ADDRESSES": "0xed6c85f92A9d8fB07b2773a14F7cD9040a1b3a57,0x1Cd9F3B8091C28e443f475FDf8bAc97C8727d537,0x933cA0DBF893aaCd2a818ec3791fEC11FDf1aeF2,0x2a0D87eA3a9E0ca33Ddd4a62C33878b58152effE",
                 # should be 1 minimum
-                "ACTIVATION_DELTA": "5",
+                "ACTIVATION_DELTA": "50",
                 "THRESHOLD": "3",
             },
         )

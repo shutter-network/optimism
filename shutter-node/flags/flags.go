@@ -42,6 +42,18 @@ var (
 		Usage:   "application specific instance-id. Has to match the network the node operates in.",
 		EnvVars: prefixEnvVars("INSTANCE_ID"),
 	}
+	GRPCListenAddressFlag = &cli.StringFlag{
+		Name:    "grpc.listen-address",
+		Usage:   "gRPC listen address for the decryption key API",
+		Value:   ":8282",
+		EnvVars: prefixEnvVars("GRPC_LISTEN_ADDRESS"),
+	}
+	GRPCListenNetworkFlag = &cli.StringFlag{
+		Name:    "grpc.listen-network",
+		Usage:   "gRPC protocol for the decryption key API",
+		Value:   "tcp",
+		EnvVars: prefixEnvVars("GRPC_LISTEN_NETWORK"),
+	}
 	P2PBootNodes = &cli.StringFlag{
 		Name: "p2p.bootnodes",
 		Usage: "Comma-separated multiaddr-format peer list. Connection to trusted PeerEXchange (PX) bootnodes, these peers will be regarded as trusted. " +
@@ -138,6 +150,8 @@ var optionalFlags = []cli.Flag{
 	L2UnsafeSyncRPCPollIntervalFlag,
 	RollupLoadProtocolVersions,
 	P2PListenAddresses,
+	GRPCListenAddressFlag,
+	GRPCListenNetworkFlag,
 }
 
 // Flags contains the list of configuration options available to the binary.

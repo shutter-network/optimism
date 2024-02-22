@@ -108,7 +108,7 @@ func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
 	if err := n.initMetricsServer(cfg); err != nil {
 		return fmt.Errorf("failed to init the metrics server: %w", err)
 	}
-	if err := n.initGRPCServer(cfg, n.log); err != nil {
+	if err := n.initGRPCServer(cfg, n.log, n.keyManager.RequestDecryptionKey); err != nil {
 		return fmt.Errorf("failed to open grpc server: %w", err)
 	}
 	n.metrics.RecordInfo(n.appVersion)
@@ -126,13 +126,15 @@ func (n *ShutterNode) initDatabase(cfg *config.Config) error {
 	return nil
 }
 
-func (n *ShutterNode) initGRPCServer(cfg *config.Config, log log.Logger) error {
+func (n *ShutterNode) initGRPCServer(
+	cfg *config.Config,
+	log log.Logger,
+	dkFn keys.RequestDecryptionKey,
+) error {
 	grpc, err := server.NewServer(
-		// TODO: make invoke-order independent
-		n.keyManager.RequestDecryptionKey,
+		dkFn,
 		server.WithLogger(log),
-		// TODO: make address configurable
-		server.WithListenAddress("tcp", ":8282"),
+		server.WithListenAddress(cfg.GRPC.ListenNetwork, cfg.GRPC.ListenAddress),
 	)
 	if err != nil {
 		return err

@@ -97,6 +97,10 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*config.Config, error) {
 			ListenAddr: ctx.String(flags.MetricsAddrFlag.Name),
 			ListenPort: ctx.Int(flags.MetricsPortFlag.Name),
 		},
+		GRPC: config.GRPCConfig{
+			ListenAddress: ctx.String(flags.GRPCListenAddressFlag.Name),
+			ListenNetwork: ctx.String(flags.GRPCListenNetworkFlag.Name),
+		},
 	}
 
 	if err := cfg.Check(); err != nil {

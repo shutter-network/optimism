@@ -12,8 +12,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/ethereum-optimism/optimism/op-node/metrics"
-	"github.com/ethereum-optimism/optimism/op-service/httputil"
 	"github.com/ethereum-optimism/optimism/shutter-node/config"
 	"github.com/ethereum-optimism/optimism/shutter-node/database"
 	"github.com/ethereum-optimism/optimism/shutter-node/database/writer"
@@ -27,9 +25,6 @@ import (
 type ShutterNode struct {
 	log        log.Logger
 	appVersion string
-	metrics    *metrics.Metrics
-
-	metricsSrv *httputil.HTTPServer
 
 	keyHandler *p2p.DecryptionKeyHandler
 	keyManager keys.Manager
@@ -60,14 +55,7 @@ func New(ctx context.Context, cfg *config.Config, log log.Logger, appVersion str
 		return nil, err
 	}
 
-	// TODO: those are rollup metrics.
-	// for now just pass them in to avoid nil-derefs
-	// during initialistation.
-	// Later we can write or own metrics definitions.
-	m := metrics.NewMetrics("shutter")
-
 	n := &ShutterNode{
-		metrics:    m,
 		log:        log,
 		appVersion: appVersion,
 		closed:     atomic.Bool{},
@@ -105,14 +93,9 @@ func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
 	if err := n.initP2P(ctx, cfg); err != nil {
 		return fmt.Errorf("failed to init the P2P stack: %w", err)
 	}
-	if err := n.initMetricsServer(cfg); err != nil {
-		return fmt.Errorf("failed to init the metrics server: %w", err)
-	}
 	if err := n.initGRPCServer(cfg, n.log, n.keyManager.RequestDecryptionKey); err != nil {
 		return fmt.Errorf("failed to open grpc server: %w", err)
 	}
-	n.metrics.RecordInfo(n.appVersion)
-	n.metrics.RecordUp()
 	return nil
 }
 
@@ -142,22 +125,6 @@ func (n *ShutterNode) initGRPCServer(
 	return nil
 }
 
-func (n *ShutterNode) initMetricsServer(cfg *config.Config) error {
-	if !cfg.Metrics.Enabled {
-		n.log.Info("metrics disabled")
-		return nil
-	}
-	n.log.Debug("starting metrics server", "addr", cfg.Metrics.ListenAddr, "port", cfg.Metrics.ListenPort)
-	// FIXME: start in a service?
-	metricsSrv, err := n.metrics.StartServer(cfg.Metrics.ListenAddr, cfg.Metrics.ListenPort)
-	if err != nil {
-		return fmt.Errorf("failed to start metrics server: %w", err)
-	}
-	n.log.Info("started metrics server", "addr", metricsSrv.Addr())
-	n.metricsSrv = metricsSrv
-	return nil
-}
-
 func (n *ShutterNode) initP2P(ctx context.Context, cfg *config.Config) error {
 	n.log.Info("got p2p config", "p2p-config", *cfg.P2P)
 	mss, err := shp2p.New(cfg.P2P)
@@ -170,14 +137,11 @@ func (n *ShutterNode) initP2P(ctx context.Context, cfg *config.Config) error {
 	return nil
 }
 
-// TODO: this needs a revisit
 func (n *ShutterNode) Start(ctx context.Context) error {
 	errgrp, teardown := service.RunBackground(ctx, n.keyManager, n.writer, n.grpc)
 	n.errgrp = errgrp
-	// XXX: the appCtx didn't seem to work for e.g. libp2p.
-	p2perrgrp, teardown2 := service.RunBackground(n.resourcesCtx, n.p2p)
-	n.log.Info("Rollup node started")
 	go func() {
+		defer teardown()
 		err := n.errgrp.Wait()
 		n.log.Error("errgroup wait returned", "error", err)
 		if err != nil {
@@ -185,21 +149,17 @@ func (n *ShutterNode) Start(ctx context.Context) error {
 		}
 	}()
 
+	p2perrgrp, p2pTeardown := service.RunBackground(n.resourcesCtx, n.p2p)
 	go func() {
-		defer teardown()
-		defer teardown2()
+		defer p2pTeardown()
 		err := p2perrgrp.Wait()
 		n.log.Error("p2p errgroup wait returned", "error", err)
 		if err != nil {
 			n.cancel(err)
 		}
 	}()
+	n.log.Info("Rollup node started")
 	return nil
-}
-
-// unixTimeStale returns true if the unix timestamp is before the current time minus the supplied duration.
-func unixTimeStale(timestamp uint64, duration time.Duration) bool {
-	return time.Unix(int64(timestamp), 0).Before(time.Now().Add(-1 * duration))
 }
 
 // Stop stops the node and closes all resources.
@@ -220,7 +180,8 @@ func (n *ShutterNode) Stop(ctx context.Context) error {
 	}
 
 	if n.halted.Load() {
-		// if we had a halt upon initialization, idle for a while, with open metrics, to prevent a rapid restart-loop
+		// if we had a halt upon initialization, idle for a while,
+		// to prevent a rapid restart-loop
 		tim := time.NewTimer(time.Minute * 5)
 		n.log.Warn("halted, idling to avoid immediate shutdown repeats")
 		defer tim.Stop()
@@ -230,14 +191,6 @@ func (n *ShutterNode) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Close metrics and pprof only after we are done idling
-	if n.metricsSrv != nil {
-		if err := n.metricsSrv.Stop(ctx); err != nil {
-			result = multierror.Append(result, fmt.Errorf("failed to close metrics server: %w", err))
-		}
-	}
-	// FIXME: how to wait properly for this?
-	log.Info("will wait for errgroup")
 	err := n.errgrp.Wait()
 	if err != nil {
 		log.Error("errgroup errorered", "error", err)
@@ -249,12 +202,4 @@ func (n *ShutterNode) Stop(ctx context.Context) error {
 
 func (n *ShutterNode) Stopped() bool {
 	return n.closed.Load()
-}
-
-func (n *ShutterNode) HTTPEndpoint() string {
-	// if n.server == nil {
-	// 	return ""
-	// }
-	// return fmt.Sprintf("http://%s", n.server.Addr().String())
-	return ""
 }

@@ -253,7 +253,7 @@ services:
       --l2.unsafe-sync-rpc=ws://l2:8546
       --rollup.config=/rollup.json
       --instance-id=442
-      --database.path=shutter.sqlite
+      --database.path=/data/shutter.sqlite
       --grpc.listen-network=tcp
       --grpc.listen-address=:8282
       --p2p.listen-addresses=/ip4/0.0.0.0/tcp/23000,/ip6/::/tcp/23000
@@ -281,6 +281,7 @@ services:
         condition: service_started
     volumes:
       - '${PWD}/../.devnet/rollup.json:/rollup.json'
+      - ./data/shutter-node:/data
 
   db:
     image: postgres

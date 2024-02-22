@@ -137,6 +137,7 @@ devnet-clean:
 	cd ./ops-bedrock && docker compose --profile shutter down
 	docker image ls 'ops-bedrock*' --format='{{.Repository}}' | xargs -r docker rmi
 	docker volume ls --filter name=ops-bedrock --format='{{.Name}}' | xargs -r docker volume rm
+	rm -rf ./ops-bedrock/data/shutter-node
 	git restore  ops-bedrock/config/
 .PHONY: devnet-clean
 

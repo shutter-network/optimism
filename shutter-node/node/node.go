@@ -118,8 +118,7 @@ func (n *ShutterNode) init(ctx context.Context, cfg *config.Config) error {
 
 func (n *ShutterNode) initDatabase(cfg *config.Config) error {
 	db := &database.Database{}
-	// TODO: make file configurable
-	if err := db.Connect("shutter.db"); err != nil {
+	if err := db.Connect(cfg.Database.FilePath); err != nil {
 		return err
 	}
 	n.db = db

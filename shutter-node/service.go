@@ -101,6 +101,9 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*config.Config, error) {
 			ListenAddress: ctx.String(flags.GRPCListenAddressFlag.Name),
 			ListenNetwork: ctx.String(flags.GRPCListenNetworkFlag.Name),
 		},
+		Database: config.DatabaseConfig{
+			FilePath: ctx.String(flags.DatabasePathFlag.Name),
+		},
 	}
 
 	if err := cfg.Check(); err != nil {

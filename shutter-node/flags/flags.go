@@ -54,6 +54,12 @@ var (
 		Value:   "tcp",
 		EnvVars: prefixEnvVars("GRPC_LISTEN_NETWORK"),
 	}
+	DatabasePathFlag = &cli.PathFlag{
+		Name:    "database.path",
+		Usage:   "path to the SQLite file",
+		Value:   "db.sqlite",
+		EnvVars: prefixEnvVars("DATABASE_PATH"),
+	}
 	P2PBootNodes = &cli.StringFlag{
 		Name: "p2p.bootnodes",
 		Usage: "Comma-separated multiaddr-format peer list. Connection to trusted PeerEXchange (PX) bootnodes, these peers will be regarded as trusted. " +
@@ -152,6 +158,7 @@ var optionalFlags = []cli.Flag{
 	P2PListenAddresses,
 	GRPCListenAddressFlag,
 	GRPCListenNetworkFlag,
+	DatabasePathFlag,
 }
 
 // Flags contains the list of configuration options available to the binary.

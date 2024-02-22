@@ -118,6 +118,7 @@ services:
       --metrics.port=7300
       --pprof.enabled
       --rpc.enable-admin
+      --shutter.grpc-address=shutter-node:8282
     ports:
       - '7545:8545'
       - '9003:9003'

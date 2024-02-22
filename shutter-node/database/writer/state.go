@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func ShutterStateToActive(s *syncevent.ShutterState) (*models.Active, error) {
+func ShutterStateToActive(s *syncevent.ShutterState) (*models.ActiveUpdate, error) {
 	atBlock, err := s.AtBlockNumber.ToUInt64()
 	if err != nil {
 		return nil, errors.Wrap(err, "convert block-number")

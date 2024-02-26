@@ -13,7 +13,7 @@ ${BB} chmod -R a+rwX data/chain-{0..3}-validator/config data/chain-seed/config
 # setup chain-seed
 $DC run --rm --no-deps chain-seed init \
     --root /chain \
-    --blocktime 1 \
+    --blocktime 5 \
     --listen-address tcp://0.0.0.0:${TM_RPC_PORT} \
     --role seed
 
@@ -28,7 +28,7 @@ for num in {0..3}; do
     $DC run --rm --no-deps ${validator_cmd} init \
         --root /chain \
         --genesis-keyper 0x440Dc6F164e9241F04d282215ceF2780cd0B755e \
-        --blocktime 1 \
+        --blocktime 5 \
         --listen-address tcp://0.0.0.0:${TM_RPC_PORT} \
         --role validator
 

@@ -196,12 +196,12 @@ dev-sepolia-up: pre-devnet
 .PHONY: dev-sepolia-up
 
 dev-sepolia-clean:
-	rm -rf ./packages/contracts-bedrock/deployments/dev-sepolia
-	rm -rf ./.devnet
-	rm ./packages/contracts-bedrock/deploy-config/dev-sepolia.json
 	cd ./ops-bedrock && docker compose --profile shutter down
 	docker image ls 'ops-bedrock*' --format='{{.Repository}}' | xargs -r docker rmi
 	docker volume ls --filter name=ops-bedrock --format='{{.Name}}' | xargs -r docker volume rm
+	rm -rf ./packages/contracts-bedrock/deployments/dev-sepolia
+	rm -rf ./.devnet
+	rm -f ./packages/contracts-bedrock/deploy-config/dev-sepolia.json
 	direnv reload
 .PHONY: dev-sepolia-clean
 

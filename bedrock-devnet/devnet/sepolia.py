@@ -52,11 +52,8 @@ def main():
       ops_bedrock_dir=ops_bedrock_dir,
       ops_chain_ops=ops_chain_ops,
       sdk_dir=sdk_dir,
-      genesis_l1_path=pjoin(devnet_dir, 'genesis-l1.json'),
       genesis_l2_path=pjoin(devnet_dir, 'genesis-l2.json'),
-      allocs_path=pjoin(devnet_dir, 'allocs-l1.json'),
       addresses_json_path=pjoin(devnet_dir, 'addresses.json'),
-      sdk_addresses_json_path=pjoin(devnet_dir, 'sdk-addresses.json'),
       rollup_config_path=pjoin(devnet_dir, 'rollup.json'),
       shutter_contracts_dir=shutter_contracts_dir,
     )

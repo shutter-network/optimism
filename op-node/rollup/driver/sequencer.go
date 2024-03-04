@@ -91,7 +91,9 @@ func (d *Sequencer) StartBuildingBlock(ctx context.Context) error {
 		return err
 	}
 	if d.shutter != nil {
-		attrsWithShutter, err := d.shutter.PreparePayloadAttributes(fetchCtx, attrs, l2Head, l1Origin.ID())
+		shutterFetchCtx, cancel := context.WithTimeout(ctx, time.Second*2)
+		defer cancel()
+		attrsWithShutter, err := d.shutter.PreparePayloadAttributes(shutterFetchCtx, attrs, l2Head)
 		if err != nil {
 			return err
 		}

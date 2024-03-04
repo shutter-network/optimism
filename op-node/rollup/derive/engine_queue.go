@@ -613,7 +613,6 @@ func (eq *EngineQueue) consolidateNextSafeAttributes(ctx context.Context) error 
 		}
 		return NewTemporaryError(fmt.Errorf("failed to get existing unsafe payload to compare against derived attributes from L1: %w", err))
 	}
-	// FIXME: what is this?
 	if err := AttributesMatchBlock(eq.safeAttributes.attributes, eq.pendingSafeHead.Hash, payload, eq.log); err != nil {
 		eq.log.Warn("L2 reorg: existing unsafe block does not match derived attributes from L1", "err", err, "unsafe", eq.unsafeHead, "pending_safe", eq.pendingSafeHead, "safe", eq.safeHead)
 		// geth cannot wind back a chain without reorging to a new, previously non-canonical, block
@@ -649,6 +648,10 @@ func (eq *EngineQueue) forceNextSafeAttributes(ctx context.Context) error {
 	}
 	if err != nil {
 		switch errType {
+		case BlockShutterStateInvalidErr:
+			// We cannot build a safe head when the unsafe head is not progressing
+			// due to lack of key release.
+			return NewTemporaryError(fmt.Errorf("can't build safe head when shutter is stalling, waiting: %w", err))
 		case BlockInsertTemporaryErr:
 			// RPC errors are recoverable, we can retry the buffered payload attributes later.
 			return NewTemporaryError(fmt.Errorf("temporarily cannot insert new safe block: %w", err))
@@ -682,6 +685,7 @@ func (eq *EngineQueue) forceNextSafeAttributes(ctx context.Context) error {
 			return nil
 
 		default:
+
 			return NewCriticalError(fmt.Errorf("unknown InsertHeadBlock error type %d: %w", errType, err))
 		}
 	}

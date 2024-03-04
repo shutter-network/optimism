@@ -89,8 +89,7 @@ func (w *DBWriter) Init(ctx context.Context) error {
 		return nil
 	}
 
-	c, err := syncclient.NewClient(
-		ctx,
+	syncOptions := []syncclient.Option{
 		syncclient.WithClientURL(w.url),
 		syncclient.WithLogger(w.log),
 		// NOTE: this means we get the block-events for the time we missed,
@@ -98,11 +97,20 @@ func (w *DBWriter) Init(ctx context.Context) error {
 		// First: Beware of that, Second: make it so that the db-writer itself
 		// can handle missing epochs and does not make their existance
 		/// conditional to anything:
-		syncclient.WithSyncStartBlock(number.NewBlockNumber(dbLastSyncedBlock)),
 		syncclient.WithSyncNewEonKey(w.HandleEonKey),
 		syncclient.WithSyncNewShutterState(w.HandleShutterState),
 		syncclient.WithSyncNewBlock(w.HandleLatestBlock),
 		syncclient.WithSyncNewKeyperSet(w.HandleKeyperSet),
+		syncclient.WithSyncStartBlock(number.NewBlockNumber(dbLastSyncedBlock)),
+	}
+	if dbLastSyncedBlock != nil {
+		w.log.Info("found latest synced block in database, continueing sync from there", "block-number", dbLastSyncedBlock)
+		// we don't want to fetch active events before the sync start block
+		syncOptions = append(syncOptions, syncclient.WithNoFetchActivesBeforeStart())
+	}
+	c, err := syncclient.NewClient(
+		ctx,
+		syncOptions...,
 	)
 	if err != nil {
 		return err

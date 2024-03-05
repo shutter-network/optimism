@@ -93,11 +93,6 @@ type Config struct {
 
 	// L1 address that declares the protocol versions, optional (Beta feature)
 	ProtocolVersionsAddress common.Address `json:"protocol_versions_address,omitempty"`
-
-	ShutterVersion                         *uint64        `json:"shutter_version,omitempty"`
-	ShutterInboxAddress                    common.Address `json:"shutter_inbox_address,omitempty"`
-	ShutterKeyBroadcastContractAddress     common.Address `json:"shutter_key_broadcast_contract_address,omitempty"`
-	ShutterKeyperSetManagerContractAddress common.Address `json:"shutter_keyperset_manager_contract_address,omitempty"`
 }
 
 // ValidateL1Config checks L1 config variables for errors.

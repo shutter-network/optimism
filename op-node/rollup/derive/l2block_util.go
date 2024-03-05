@@ -38,10 +38,16 @@ func L2BlockToBlockRef(block L2BlockRefSource, genesis *rollup.Genesis) (eth.L2B
 		sequenceNumber = 0
 	} else {
 		txs := block.Transactions()
-		if txs.Len() == 0 {
+		infoTxIdx := 0
+		if txs.Len() > 0 {
+			if txs[0].Type() == types.RevealTxType {
+				infoTxIdx = 1
+			}
+		}
+		if txs.Len() == (0 + infoTxIdx) {
 			return eth.L2BlockRef{}, fmt.Errorf("l2 block is missing L1 info deposit tx, block hash: %s", hash)
 		}
-		tx := txs[0]
+		tx := txs[infoTxIdx]
 		if tx.Type() != types.DepositTxType {
 			return eth.L2BlockRef{}, fmt.Errorf("first payload tx has unexpected tx type: %d", tx.Type())
 		}

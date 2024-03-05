@@ -33,6 +33,12 @@ func lastDeposit(txns []eth.Data) (int, error) {
 		if deposit {
 			lastDeposit = i
 		} else {
+			if i == 0 && tx[0] == types.RevealTxType {
+				// reveal transaction at position 0
+				// should not break and hinder
+				// finding the last deposit
+				continue
+			}
 			break
 		}
 	}
@@ -44,8 +50,22 @@ func sanityCheckPayload(payload *eth.ExecutionPayload) error {
 	if len(payload.Transactions) == 0 {
 		return errors.New("no transactions in returned payload")
 	}
-	if payload.Transactions[0][0] != types.DepositTxType {
-		return fmt.Errorf("first transaction was not deposit tx. Got %v", payload.Transactions[0][0])
+	firstDepositIndex := 1
+	if payload.Transactions[0][0] != types.RevealTxType {
+		// this is possible, but then there should not be any
+		// reveal tx anywhere else
+		firstDepositIndex = 0
+	}
+	for i := 1; i < len(payload.Transactions); i++ {
+		if payload.Transactions[i][0] == types.RevealTxType {
+			return fmt.Errorf("reveal tx (%d) not as first transaction", i)
+		}
+	}
+	if payload.Transactions[firstDepositIndex][0] != types.DepositTxType {
+		return fmt.Errorf(
+			"first deposit transaction was not at the correct index. Got %v",
+			payload.Transactions[firstDepositIndex][0],
+		)
 	}
 	// Ensure that the deposits are first
 	lastDeposit, err := lastDeposit(payload.Transactions)
@@ -77,6 +97,8 @@ const (
 	BlockInsertPrestateErr
 	// BlockInsertPayloadErr indicates that the payload was invalid and cannot become canonical.
 	BlockInsertPayloadErr
+	// BlockShutterStateInvalidErr indicates that the shutter state did not match payload attributes or the block is invalid because of a failed shutter state-transition
+	BlockShutterStateInvalidErr
 )
 
 // StartPayload starts an execution payload building process in the provided Engine, with the given attributes.
@@ -87,6 +109,8 @@ func StartPayload(ctx context.Context, eng Engine, fc eth.ForkchoiceState, attrs
 		var inputErr eth.InputError
 		if errors.As(err, &inputErr) {
 			switch inputErr.Code {
+			case eth.InvalidShutterState:
+				return eth.PayloadID{}, BlockShutterStateInvalidErr, fmt.Errorf("shutter state is not valid, cannot build block: %w", inputErr.Unwrap())
 			case eth.InvalidForkchoiceState:
 				return eth.PayloadID{}, BlockInsertPrestateErr, fmt.Errorf("pre-block-creation forkchoice update was inconsistent with engine, need reset to resolve: %w", inputErr.Unwrap())
 			case eth.InvalidPayloadAttributes:

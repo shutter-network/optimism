@@ -6,6 +6,8 @@ import (
 	"io"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
@@ -70,7 +72,6 @@ func (aq *AttributesQueue) NextAttributes(ctx context.Context, parent eth.L2Bloc
 		aq.isLastInSpan = false
 		return &attr, nil
 	}
-
 }
 
 // createNextAttributes transforms a batch into a payload attributes. This sets `NoTxPool` and appends the batched transactions
@@ -91,10 +92,37 @@ func (aq *AttributesQueue) createNextAttributes(ctx context.Context, batch *Sing
 		return nil, err
 	}
 
+
+	batchTxs := []hexutil.Bytes{}
+	if len(batch.Transactions) > 0 {
+		for i, batchTx := range batch.Transactions {
+			// pop the reveal-tx from the batch.Transactions
+			// and instead of appending it to the list
+			// of forced transactions,
+			// read the key-value and set the DecryptionKey
+			// attribute of the payload-attributes.
+			if batchTx[0] == types.RevealTxType {
+				if i != 0 {
+					return nil, fmt.Errorf(
+						"found reveal tx on position %d of batch txs, invalid batch", i,
+					)
+				}
+				tx := new(types.Transaction)
+				err := tx.UnmarshalBinary(batchTx)
+				if err != nil {
+					return nil, fmt.Errorf("can't decode reveal tx in batch: %s", err)
+				}
+				key := hexutil.Bytes(tx.Data())
+				attrs.DecryptionKey = &key
+			} else {
+				batchTxs = append(batchTxs, batchTx)
+			}
+		}
+	}
 	// we are verifying, not sequencing, we've got all transactions and do not pull from the tx-pool
 	// (that would make the block derivation non-deterministic)
 	attrs.NoTxPool = true
-	attrs.Transactions = append(attrs.Transactions, batch.Transactions...)
+	attrs.Transactions = append(attrs.Transactions, batchTxs...)
 
 	aq.log.Info("generated attributes in payload queue", "txs", len(attrs.Transactions), "timestamp", batch.Timestamp)
 

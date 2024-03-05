@@ -28,6 +28,7 @@ import (
 	oppprof "github.com/ethereum-optimism/optimism/op-service/pprof"
 	"github.com/ethereum-optimism/optimism/op-service/retry"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
+	shclient "github.com/ethereum-optimism/optimism/shutter-node/grpc/v1/client"
 )
 
 type OpNode struct {
@@ -48,6 +49,7 @@ type OpNode struct {
 	p2pSigner p2p.Signer            // p2p gogssip application messages will be signed with this signer
 	tracer    Tracer                // tracer to get events for testing/debugging
 	runCfg    *RuntimeConfig        // runtime configurables
+	shutter   *shclient.Client
 
 	rollupHalt string // when to halt the rollup, disabled if empty
 
@@ -109,6 +111,9 @@ func (n *OpNode) init(ctx context.Context, cfg *Config, snapshotLog log.Logger) 
 	}
 	if err := n.initL1(ctx, cfg); err != nil {
 		return fmt.Errorf("failed to init L1: %w", err)
+	}
+	if err := n.initShutter(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to init the shutter client: %w", err)
 	}
 	if err := n.initL2(ctx, cfg, snapshotLog); err != nil {
 		return fmt.Errorf("failed to init L2: %w", err)
@@ -304,8 +309,21 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 		return err
 	}
 
-	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync)
+	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync, n.shutter)
 
+	return nil
+}
+
+func (n *OpNode) initShutter(ctx context.Context, cfg *Config) error {
+	c, err := cfg.Shutter.Setup()
+	if err != nil {
+		return fmt.Errorf("failed to setup shutter grpc-client condig: %w", err)
+	}
+	err = c.Init(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to init shutter grpc-client: %w", err)
+	}
+	n.shutter = c
 	return nil
 }
 
@@ -612,6 +630,9 @@ func (n *OpNode) Stop(ctx context.Context) error {
 		n.l1Source.Close()
 	}
 
+	if n.shutter != nil {
+		n.shutter.Close()
+	}
 	if result == nil { // mark as closed if we successfully fully closed
 		n.closed.Store(true)
 	}

@@ -25,8 +25,12 @@ func PayloadToBlockRef(payload *eth.ExecutionPayload, genesis *rollup.Genesis) (
 			return eth.L2BlockRef{}, fmt.Errorf("l2 block is missing L1 info deposit tx, block hash: %s", payload.BlockHash)
 		}
 		var tx types.Transaction
-		if err := tx.UnmarshalBinary(payload.Transactions[0]); err != nil {
-			return eth.L2BlockRef{}, fmt.Errorf("failed to decode first tx to read l1 info from: %w", err)
+		infoTxIndex := 0
+		if payload.Transactions[0][0] == types.RevealTxType {
+			infoTxIndex = 1
+		}
+		if err := tx.UnmarshalBinary(payload.Transactions[infoTxIndex]); err != nil {
+			return eth.L2BlockRef{}, fmt.Errorf("failed to decode info tx (index=%d) to read l1 info from: %w", infoTxIndex, err)
 		}
 		if tx.Type() != types.DepositTxType {
 			return eth.L2BlockRef{}, fmt.Errorf("first payload tx has unexpected tx type: %d", tx.Type())
@@ -59,9 +63,13 @@ func PayloadToSystemConfig(payload *eth.ExecutionPayload, cfg *rollup.Config) (e
 		if len(payload.Transactions) == 0 {
 			return eth.SystemConfig{}, fmt.Errorf("l2 block is missing L1 info deposit tx, block hash: %s", payload.BlockHash)
 		}
+		infoTxIndex := 0
+		if payload.Transactions[0][0] == types.RevealTxType {
+			infoTxIndex = 1
+		}
 		var tx types.Transaction
-		if err := tx.UnmarshalBinary(payload.Transactions[0]); err != nil {
-			return eth.SystemConfig{}, fmt.Errorf("failed to decode first tx to read l1 info from: %w", err)
+		if err := tx.UnmarshalBinary(payload.Transactions[infoTxIndex]); err != nil {
+			return eth.SystemConfig{}, fmt.Errorf("failed to decode info tx (index=%d) to read l1 info from: %w", infoTxIndex, err)
 		}
 		if tx.Type() != types.DepositTxType {
 			return eth.SystemConfig{}, fmt.Errorf("first payload tx has unexpected tx type: %d", tx.Type())

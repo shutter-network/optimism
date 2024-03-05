@@ -20,6 +20,10 @@
         pkgs.nodePackages.pnpm
         pkgs.python311
         pkgs.go-ethereum
+        # protobuf / gRPC compiler codegen
+        pkgs.protoc-gen-go
+        pkgs.protobuf
+        pkgs.protoc-gen-go-grpc
       ];
     }
   ];

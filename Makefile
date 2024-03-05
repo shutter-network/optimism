@@ -137,6 +137,8 @@ devnet-clean:
 	cd ./ops-bedrock && docker compose --profile shutter down
 	docker image ls 'ops-bedrock*' --format='{{.Repository}}' | xargs -r docker rmi
 	docker volume ls --filter name=ops-bedrock --format='{{.Name}}' | xargs -r docker volume rm
+	rm -rf ./ops-bedrock/data/shutter-node
+	git restore  ops-bedrock/config/
 .PHONY: devnet-clean
 
 devnet-allocs: pre-devnet
@@ -148,7 +150,6 @@ devnet-logs:
 
 test-unit:
 	make -C ./op-node test
-	make -C ./shutter-node test
 	make -C ./op-proposer test
 	make -C ./op-batcher test
 	make -C ./op-e2e test

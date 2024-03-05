@@ -45,6 +45,11 @@ var (
 		EnvVars: prefixEnvVars("NETWORK"),
 	}
 	/* Optional Flags */
+	ShutterGRPCAddress = &cli.StringFlag{
+		Name:    "shutter.grpc-address",
+		Usage:   "Address of the shutter-node gRPC server",
+		EnvVars: prefixEnvVars("SHUTTER"),
+	}
 	RPCListenAddr = &cli.StringFlag{
 		Name:    "rpc.addr",
 		Usage:   "RPC listening address",
@@ -273,6 +278,7 @@ var requiredFlags = []cli.Flag{
 }
 
 var optionalFlags = []cli.Flag{
+	ShutterGRPCAddress,
 	RPCListenAddr,
 	RPCListenPort,
 	RollupConfig,

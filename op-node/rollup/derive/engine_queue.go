@@ -442,6 +442,8 @@ func (eq *EngineQueue) tryUpdateEngine(ctx context.Context) error {
 		var inputErr eth.InputError
 		if errors.As(err, &inputErr) {
 			switch inputErr.Code {
+			case eth.InvalidShutterState:
+				return NewResetError(fmt.Errorf("forkchoice update shutter state was inconsistent with engine, need reset to resolve: %w", inputErr.Unwrap()))
 			case eth.InvalidForkchoiceState:
 				return NewResetError(fmt.Errorf("forkchoice update was inconsistent with engine, need reset to resolve: %w", inputErr.Unwrap()))
 			default:
@@ -526,6 +528,8 @@ func (eq *EngineQueue) tryNextUnsafePayload(ctx context.Context) error {
 		var inputErr eth.InputError
 		if errors.As(err, &inputErr) {
 			switch inputErr.Code {
+			case eth.InvalidShutterState:
+				return NewResetError(fmt.Errorf("shutter invalid state in forkchoice-updated response: %w", err))
 			case eth.InvalidForkchoiceState:
 				return NewResetError(fmt.Errorf("pre-unsafe-block forkchoice update was inconsistent with engine, need reset to resolve: %w", inputErr.Unwrap()))
 			default:
@@ -644,6 +648,10 @@ func (eq *EngineQueue) forceNextSafeAttributes(ctx context.Context) error {
 	}
 	if err != nil {
 		switch errType {
+		case BlockShutterStateInvalidErr:
+			// We cannot build a safe head when the unsafe head is not progressing
+			// due to lack of key release.
+			return NewTemporaryError(fmt.Errorf("can't build safe head when shutter is stalling, waiting: %w", err))
 		case BlockInsertTemporaryErr:
 			// RPC errors are recoverable, we can retry the buffered payload attributes later.
 			return NewTemporaryError(fmt.Errorf("temporarily cannot insert new safe block: %w", err))
@@ -677,6 +685,7 @@ func (eq *EngineQueue) forceNextSafeAttributes(ctx context.Context) error {
 			return nil
 
 		default:
+
 			return NewCriticalError(fmt.Errorf("unknown InsertHeadBlock error type %d: %w", errType, err))
 		}
 	}

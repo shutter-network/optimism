@@ -20,6 +20,9 @@ type Config struct {
 	RPC     RPCConfig
 	Metrics MetricsConfig
 
+	GRPC     GRPCConfig
+	Database DatabaseConfig
+
 	// Cancel to request a premature shutdown of the node itself, e.g. when halting. This may be nil.
 	Cancel context.CancelCauseFunc
 }
@@ -32,6 +35,23 @@ type RPCConfig struct {
 
 func (cfg *RPCConfig) HttpEndpoint() string {
 	return fmt.Sprintf("http://%s:%d", cfg.ListenAddr, cfg.ListenPort)
+}
+
+type GRPCConfig struct {
+	ListenAddress string
+	ListenNetwork string
+}
+
+func (_ GRPCConfig) Check() error {
+	return nil
+}
+
+type DatabaseConfig struct {
+	FilePath string
+}
+
+func (_ DatabaseConfig) Check() error {
+	return nil
 }
 
 type MetricsConfig struct {
@@ -66,6 +86,12 @@ func (cfg *Config) Check() error {
 	}
 	if err := cfg.Metrics.Check(); err != nil {
 		return fmt.Errorf("metrics config error: %w", err)
+	}
+	if err := cfg.Database.Check(); err != nil {
+		return fmt.Errorf("database config error: %w", err)
+	}
+	if err := cfg.GRPC.Check(); err != nil {
+		return fmt.Errorf("gRPC config error: %w", err)
 	}
 	return nil
 }

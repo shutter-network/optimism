@@ -24,7 +24,7 @@
 [submodule "packages/op-geth"]
 	path = packages/op-geth
 	url = git@github.com:shutter-network/op-geth.git
-	branch = ezdac/shutter
+	branch = shutter
 [submodule "packages/rolling-shutter"]
 	path = packages/rolling-shutter
 	url = git@github.com:shutter-network/rolling-shutter.git

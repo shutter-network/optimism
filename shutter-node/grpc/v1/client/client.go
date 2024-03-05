@@ -54,6 +54,9 @@ func (c *Client) waitState(ctx context.Context) bool {
 			retry = false
 		case connectivity.Connecting:
 		case connectivity.TransientFailure:
+		// NOTE: if the configured gRPC server
+		// address is incorrect, we will stay in this
+		// state forever
 		case connectivity.Idle:
 			c.conn.Connect()
 		case connectivity.Shutdown:
@@ -84,13 +87,13 @@ func (c *Client) GetKey(ctx context.Context, block uint) <-chan *DecryptionKeyRe
 	opts := []googrpc.CallOption{}
 
 	go func(ctx context.Context, keyChan chan<- *DecryptionKeyResult) {
+		defer close(keyChan)
 		ok := c.waitState(ctx)
 		if !ok {
 			// ctx done, or rpc shutting down
 			return
 		}
 
-		defer close(keyChan)
 		resp, err := c.client.GetDecryptionKey(ctx, req, opts...)
 		// XXX: although we waited for a state, this can still fail again
 		// due to the state. We don't currently catch this and try again..
@@ -100,7 +103,6 @@ func (c *Client) GetKey(ctx context.Context, block uint) <-chan *DecryptionKeyRe
 		// a send somewhere else
 		select {
 		case <-ctx.Done():
-			return
 		case keyChan <- &decrKey:
 		}
 	}(ctx, key)

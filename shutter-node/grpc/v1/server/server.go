@@ -55,12 +55,26 @@ func (s *Server) Start(ctx context.Context, runner service.Runner) error {
 	})
 	runner.Go(func() error {
 		<-ctx.Done()
-		// Don't stop with GracefulStop() because we
-		// are expecting hanging long-polling connections.
-		s.serv.Stop()
-		// TODO: stop with  GracefulStop(), and then
-		// signal the event loop to close the long running
-		// decryption key streams
+
+		// Stops accepting new RPCs, but
+		// wait's until currently active calls are served.
+		//
+		// We are only accepting potentially long-blocking
+		// incoming requests for blocks of up to 'latest-block+1',
+		// and block progress is dependent on the server returning
+		// RPC calls with the next key.
+		s.serv.GracefulStop()
+		// FIXME: requests for very old blocks should fail immediatly
+		// and not block long
+		// FIXME: if the shutter-node is shut down,
+		// the server has to be cancelled first.
+		// It will then serve requests of up to latest-block+1,
+		// and then wait for decryption keys of up to latest-block+2.
+		// Only if those are persisted, the shutter-node can shut down
+		// the P2P service and other services.
+		// TODO: in addition to that, an authenticated mechanism for
+		// the shutter-node to request resends of decryption keys
+		// would be desired
 		return ctx.Err()
 	})
 
@@ -81,7 +95,6 @@ func (s *Server) getDecryptionKey(ctx context.Context, block uint) (
 		if res.Error != nil {
 			return nil, errs.Error(res.Error)
 		} else if errors.Is(res.Error, keys.ErrNotActive) {
-			// XXX: is this the correct Error to check for?
 			return &grpc.DecryptionKey{
 				Active: false,
 				Block:  uint64(res.Block),
@@ -104,6 +117,7 @@ func (s *Server) GetDecryptionKey(
 		return nil, errors.New("got no request")
 	}
 	block := uint(req.GetBlock())
+	ctx.Err()
 	// FIXME:
 	// If there is no STATE for a block, then it will return immediately
 	// Error: rpc error: code = Unknown desc = no block state found

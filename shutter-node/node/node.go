@@ -138,7 +138,7 @@ func (n *ShutterNode) initP2P(ctx context.Context, cfg *config.Config) error {
 }
 
 func (n *ShutterNode) Start(ctx context.Context) error {
-	errgrp, teardown := service.RunBackground(ctx, n.keyManager, n.writer, n.grpc)
+	errgrp, teardown := service.RunBackground(ctx, n.grpc)
 	n.errgrp = errgrp
 	go func() {
 		defer teardown()
@@ -149,7 +149,7 @@ func (n *ShutterNode) Start(ctx context.Context) error {
 		}
 	}()
 
-	p2perrgrp, p2pTeardown := service.RunBackground(n.resourcesCtx, n.p2p)
+	p2perrgrp, p2pTeardown := service.RunBackground(n.resourcesCtx, n.keyManager, n.writer, n.p2p)
 	go func() {
 		defer p2pTeardown()
 		err := p2perrgrp.Wait()
@@ -168,10 +168,22 @@ func (n *ShutterNode) Stop(ctx context.Context) error {
 	if n.closed.Load() {
 		return errors.New("node is already closed")
 	}
+	// First wait for the gRPC shutdown
+	err := n.errgrp.Wait()
+	if err != nil {
+		log.Error("errgroup errorered", "error", err)
+	}
+	// TODO: wait for next decryption-key (eventually with timeout)
+	// For this we need to save what the "next" / last expected
+	// decryption key should be.
+	// HACK: for now just wait 10 seconds and hope key arrives
+	// (gRPC is closed by now)
+	n.log.Info("gRPC server closed, waiting before syncer shutdown")
+	time.Sleep(10 * time.Second)
 
 	var result *multierror.Error
 	if n.resourcesClose != nil {
-		// p2p context
+		// p2p, dbwriter and key-manager context
 		n.resourcesClose()
 	}
 
@@ -189,11 +201,6 @@ func (n *ShutterNode) Stop(ctx context.Context) error {
 		case <-tim.C:
 		case <-ctx.Done():
 		}
-	}
-
-	err := n.errgrp.Wait()
-	if err != nil {
-		log.Error("errgroup errorered", "error", err)
 	}
 
 	log.Info("shutting down")

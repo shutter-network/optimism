@@ -29,9 +29,8 @@ type (
 
 func New(db *database.Database, logger log.Logger) (Manager, error) {
 	return &manager{
-		db:  db,
-		log: logger,
-		// TODO: chan sizes?
+		db:            db,
+		log:           logger,
 		newState:      make(chan *models.State, 10),
 		newKeyRequest: make(chan *keyRequest, 10),
 		newEpoch:      make(chan *models.Epoch, 10),
@@ -62,16 +61,6 @@ var (
 	ErrRequestAborted    = errors.New("request was aborted")
 )
 
-// FIXME:
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=1 sql="SELECT * FROM `actives` WHERE `actives`.`id` = 1 AND `actives`.`deleted_at` IS NULL"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=0 sql="SELECT * FROM `eon_keypers` WHERE `eon_keypers`.`eon_id` = 1"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=1 sql="SELECT * FROM `eons` WHERE `eons`.`id` = 1 AND `eons`.`deleted_at` IS NULL"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=1 sql="SELECT * FROM `states` WHERE `states`.`deleted_at` IS NULL ORDER BY block DESC LIMIT 1"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=1 sql="SELECT * FROM `actives` WHERE `actives`.`id` = 1 AND `actives`.`deleted_at` IS NULL"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=0 sql="SELECT * FROM `eon_keypers` WHERE `eon_keypers`.`eon_id` = 1"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=1 sql="SELECT * FROM `eons` WHERE `eons`.`id` = 1 AND `eons`.`deleted_at` IS NULL"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=1 sql="SELECT * FROM `states` WHERE block = 78 AND `states`.`deleted_at` IS NULL LIMIT 1"
-// shutter-node-1  | t=2024-02-20T13:11:16+0000 lvl=dbug msg="database operation"                  duration_ms=0  rows_affected=0 sql="SELECT * FROM `public_keys` WHERE eon_index = 0 AND `public_keys`.`deleted_at` IS NULL LIMIT 1"
 func (m *manager) queryEpochForBlock(db *gorm.DB, block uint) (*models.Epoch, error) {
 	var epoch *models.Epoch
 	err := db.Transaction(func(tx *gorm.DB) error {
@@ -208,23 +197,6 @@ func (m *manager) eventLoop(ctx context.Context) error {
 	db := m.db.Session(ctx, m.log)
 	requests := make(requestsMap)
 	var latestState *models.State
-
-	// t := time.NewTicker(1 * time.Second)
-	// for latestState == nil {
-	// 	select {
-	// 	case <-ctx.Done():
-	// 		return ctx.Err()
-	// 	case <-t.C:
-	// 		var err error
-	// 		latestState, err = query.GetLatestState(db)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 	}
-	// }
-	// m.log.Info("found initial latest state", "state", latestState)
-	// t.Stop()
-
 	// HACK: for now just poll here, since we
 	// currently dont send on the channels from
 	// the other side

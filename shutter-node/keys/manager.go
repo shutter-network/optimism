@@ -145,7 +145,7 @@ func (m *manager) checkRequestResult(reqs requestsMap, db *gorm.DB, latestState 
 		// }
 		//
 
-		// only fill epoch requests for the next
+		// only fill epoch requests for up to the next
 		// block after the known latest state
 		if block > latestState.Block+1 {
 			for _, request := range requests {
@@ -153,6 +153,7 @@ func (m *manager) checkRequestResult(reqs requestsMap, db *gorm.DB, latestState 
 			}
 			continue
 		}
+
 		if latestEpoch != nil && block == latestEpoch.Block {
 			epoch = latestEpoch
 		}
@@ -167,6 +168,8 @@ func (m *manager) checkRequestResult(reqs requestsMap, db *gorm.DB, latestState 
 			// go away in another iteration
 			for _, request := range requests {
 				request.errorPromise(err)
+				m.log.Info("filled key request promise",
+					"block", epoch.Block, "success", false, "error", err)
 			}
 			filled = append(filled, block)
 			continue
@@ -174,6 +177,8 @@ func (m *manager) checkRequestResult(reqs requestsMap, db *gorm.DB, latestState 
 			if epoch != nil {
 				for _, request := range requests {
 					request.success(epoch.SecretKey)
+					m.log.Info("filled key request promise",
+						"block", epoch.Block, "success", true, "error", nil)
 				}
 			} else {
 				for _, request := range requests {
@@ -191,9 +196,8 @@ func (m *manager) checkRequestResult(reqs requestsMap, db *gorm.DB, latestState 
 	return nil
 }
 
-// TODO: we also want to poll the db regularly
 func (m *manager) eventLoop(ctx context.Context) error {
-	m.log.Info("manager start event loop")
+	m.log.Debug("manager starting event loop")
 	db := m.db.Session(ctx, m.log)
 	requests := make(requestsMap)
 	var latestState *models.State
@@ -211,6 +215,9 @@ evLoop:
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-cleanupTimer.C:
+			// cleanup the queue so that only unprocessed
+			// events remain in the queue
+			m.log.Info("cleaning up filled key requests", "num-blocks", len(requests))
 			for block, reqs := range requests {
 				n := []*keyRequest{}
 				for _, r := range reqs {
@@ -226,9 +233,10 @@ evLoop:
 			}
 		case <-t.C:
 			if len(requests) == 0 {
+				// no work to do, the queue is empty
 				continue
 			}
-			// HACK: for now just poll
+			// HACK: for now just poll the db
 			state, err := query.GetLatestState(db)
 			if err != nil || state == nil {
 				m.log.Error("couldn't poll latest state", "error", err, "state", state)
@@ -256,8 +264,15 @@ evLoop:
 				requests[r.block] = reqs
 			}
 
-		// TODO: we don't want to block the DB writer
-		// while writing to those 2 channels!
+		// TODO:
+		// the db writer does not notify those channels yet,
+		// so this code is not used yet/
+		// we want to make sure the we don't block the DB writer
+		// when it is writing to those channels and the key manager
+		// is doing something else.
+		// it's fine to use a non-blocking send, since the notification
+		// is an optimisation. as long as we are regularly polling the
+		// db for updates on the requests we still don't miss anything.
 		case e, ok := <-m.newEpoch:
 			if !ok {
 				// XXX: what to do?

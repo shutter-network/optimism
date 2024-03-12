@@ -6,6 +6,7 @@ import (
 	grpc "github.com/ethereum-optimism/optimism/shutter-node/grpc/v1"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
+	"github.com/shutter-network/shutter/shlib/shcrypto"
 	googrpc "google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 )
@@ -79,33 +80,38 @@ func (c *Client) waitState(ctx context.Context) bool {
 }
 
 // Returns a promise
-func (c *Client) GetKey(ctx context.Context, block uint) <-chan *DecryptionKeyResult {
-	key := make(chan *DecryptionKeyResult, 1)
+func (c *Client) GetKey(ctx context.Context, block uint) (*DecryptionKeyResult, error) {
 	req := &grpc.GetDecryptionKeyRequest{
 		Block: uint64(block),
 	}
 	opts := []googrpc.CallOption{}
 
-	go func(ctx context.Context, keyChan chan<- *DecryptionKeyResult) {
-		defer close(keyChan)
-		ok := c.waitState(ctx)
-		if !ok {
-			// ctx done, or rpc shutting down
-			return
-		}
+	ok := c.waitState(ctx)
+	if !ok {
+		// ctx done, or rpc shutting down
+		// TODO: error message
+		return nil, errors.New("wait state failed")
+	}
 
-		resp, err := c.client.GetDecryptionKey(ctx, req, opts...)
-		// XXX: although we waited for a state, this can still fail again
-		// due to the state. We don't currently catch this and try again..
-		// --> is this transparently retrying?
-		decrKey := ToResult(resp.GetDecryptionKey(), err)
-		// promise, so shouldn't be blocking unlesss we got
-		// a send somewhere else
-		select {
-		case <-ctx.Done():
-		case keyChan <- &decrKey:
-		}
-	}(ctx, key)
+	resp, err := c.client.GetDecryptionKey(ctx, req, opts...)
+	if err != nil {
+		return nil, err
+	}
+	decrKey := resp.GetDecryptionKey()
+	if resp == nil {
+		// TODO:
+		return nil, errors.New("no value returned")
+	}
 
-	return key
+	k := &DecryptionKeyResult{
+		Block:  uint(decrKey.Block),
+		Active: decrKey.Active,
+	}
+
+	key := &shcrypto.EpochSecretKey{}
+	if err := key.Unmarshal(decrKey.Key); err != nil {
+		return nil, errors.Wrap(err, "marshal epoch secret key")
+	}
+	k.SecretKey = key
+	return k, nil
 }

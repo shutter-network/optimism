@@ -216,44 +216,37 @@ func (sh *Engine) PreparePayloadAttributes(
 	// If it thinks shutter is active, it will block until a key
 	// is received.
 	// Other reasons for blocking long is an undesired connectivity.
-	key, ok := <-sh.shutter.GetKey(ctx, uint(l2Parent.Number+1))
-	if !ok {
-		// This means either the context timed out,
-		// or the connection closed
-		err := errors.New("shutter - key promise closed without value")
+	key, err := sh.shutter.GetKey(ctx, uint(l2Parent.Number+1))
+	if err != nil {
+		err := fmt.Errorf("gRPC 'GetDecryptionKey' returned with error: %s", err)
 		return sh.decideError(state, attrs, err)
 	}
 	// The shutter-node api is not down and returned.
 	sh.log.Info("shutter - received key from shutter-node", "key", key)
-	if key.Error != nil {
-		err := fmt.Errorf("get-key returned with error: %s", key.Error)
-		return sh.decideError(state, attrs, err)
-	} else {
-		hexKey := hexutil.Bytes(key.SecretKey.Marshal())
-		if !key.Active {
-			if state.isTouchedBy(updateEntityExecutionClient) {
-				// if we already got confirmed by the
-				// engine API before, we have a mismatch with
-				// the shutter-node.
-				// We can disable shutter now already,
-				// because the API doesn't recover from this.
-				sh.log.Warn("shutter - shutter API mismatch, deactivating shutter")
-				attrs.DecryptionKey = &DeactivationDecryptionKey
-				return attrs, nil
-			}
-			attrs.DecryptionKey = nil
-			state.active = false
-		} else {
-			// as expected, we are active and we got
-			// a key within the timeout
-			attrs.DecryptionKey = &hexKey
-			sh.log.Info("shutter - got valid key",
-				"key", hexKey,
-				"active", key.Active,
-				"block", key.Block,
-			)
+	hexKey := hexutil.Bytes(key.SecretKey.Marshal())
+	if !key.Active {
+		if state.isTouchedBy(updateEntityExecutionClient) {
+			// if we already got confirmed by the
+			// engine API before, we have a mismatch with
+			// the shutter-node.
+			// We can disable shutter now already,
+			// because the API doesn't recover from this.
+			sh.log.Warn("shutter - shutter API mismatch, deactivating shutter")
+			attrs.DecryptionKey = &DeactivationDecryptionKey
+			return attrs, nil
 		}
-		state.touch(updateEntityShutterNode)
+		attrs.DecryptionKey = nil
+		state.active = false
+	} else {
+		// as expected, we are active and we got
+		// a key within the timeout
+		attrs.DecryptionKey = &hexKey
+		sh.log.Info("shutter - got valid key",
+			"key", hexKey,
+			"active", key.Active,
+			"block", key.Block,
+		)
 	}
+	state.touch(updateEntityShutterNode)
 	return attrs, nil
 }

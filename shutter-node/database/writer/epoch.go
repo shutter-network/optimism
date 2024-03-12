@@ -8,25 +8,31 @@ import (
 )
 
 func (w *DBWriter) handleNewEpoch(epoch *models.Epoch) error {
-	w.log.Info("handle new epoch called", "epoch", epoch)
+	var duplicate bool
 	err := w.db.Transaction(func(tx *gorm.DB) error {
-		// XXX: should we set the Metadata.InsertBlock?
-		//  We could poll for the latest state here and use that
-		//  block number.
-		// Howeber this might be ambigouus, since the epoch arrival
-		// is not directly synced with the latest-head events,
-		// so it could be either inserted at
-		// "latest-head" or "latest-head + 1".
 		epochResult := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&epoch)
 		if epochResult.Error != nil {
 			return errors.Wrap(epochResult.Error, "create epoch")
+		}
+		if epochResult.RowsAffected == 0 {
+			duplicate = true
 		}
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	w.log.Info("inserted epoch in db", "decrypt-block", epoch.Block)
+	if !duplicate {
+		w.log.Info("decryption-key inserted into db",
+			"reveal-block", epoch.Block,
+			"eon-index", epoch.EonIndex,
+		)
+	} else {
+		w.log.Info("handled duplicate decryption-key, not inserted into db",
+			"reveal-block", epoch.Block,
+			"eon-index", epoch.EonIndex,
+		)
+	}
 	// TODO: notify the key-request fulfillment service that there is a new epoch
 	// but use a non-blocking send, since the service is also polling the db
 	return nil

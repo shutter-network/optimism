@@ -60,6 +60,7 @@ func KeyRequestExpectResult(ctx context.Context, p2pKeys *p2pmsg.DecryptionKeys,
 		// is the key-manager loop polling the db.
 		ctx, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
 		defer cancel()
+
 		res, err := ev.WaitResult(ctx)
 		if err != nil {
 			return err
@@ -94,7 +95,7 @@ func DefaultCmpOpts() []cmp.Option {
 	// NOTE: this is susceptible to field / type renames!
 	return []cmp.Option{
 		cmpopts.IgnoreUnexported(),
-		cmpopts.IgnoreFields(models.State{}, "EonID", "ActiveID"),
+		cmpopts.IgnoreFields(models.State{}, "EonID", "ActiveUpdateID"),
 		cmpopts.IgnoreFields(models.Metadata{}, "ID", "CreatedAt", "UpdatedAt", "DeletedAt"),
 		cmpopts.IgnoreFields(models.Keyper{}, "Eons"),
 		CompareAddress(),
@@ -151,11 +152,11 @@ func IsKeyperSetActive(ks *syncevent.KeyperSet) CheckFunction {
 		// search by nearest activation block
 		//
 		latestBlock, err := query.GetLatestBlock(db)
-		if err != nil {
+		if err != nil || latestBlock == nil {
 			return errors.Wrap(err, "retrieve latest block")
 		}
 		// pending: latestBlock + 1
-		queried, err := query.GetEonForBlock(db, latestBlock+1)
+		queried, err := query.GetEonForBlock(db, *latestBlock+1)
 		if err != nil {
 			return err
 		}
@@ -181,7 +182,6 @@ func ExpectEventDB() CheckFunction {
 			if err != nil {
 				return errors.Wrap(err, "convert block")
 			}
-			// FIXME: this has different behaviour now
 			queried, err := query.GetActiveUpdate(db, uint(block))
 			if err != nil {
 				return err
@@ -249,7 +249,7 @@ func ExpectEventDB() CheckFunction {
 				return errors.Wrap(err, ErrObjNotInDB.Error())
 			}
 		case *p2pmsg.DecryptionKeys:
-			expected, err := p2p.DecyptionKeysEventToModel(t)
+			expected, err := p2p.DecryptionKeysEventToModel(t)
 			if err != nil {
 				return errors.Wrap(err, "derive expected model")
 			}

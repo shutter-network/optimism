@@ -6,7 +6,10 @@ import (
 	"time"
 
 	"github.com/ethereum-optimism/optimism/shutter-node/database/models"
+	"github.com/ethereum-optimism/optimism/shutter-node/database/query"
+	"github.com/pkg/errors"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/service"
+	"gorm.io/gorm"
 	"gotest.tools/assert"
 )
 
@@ -21,10 +24,6 @@ func TestSimpleInsert(t *testing.T) {
 	tt.Events(
 		NewTestEvent("block 0 finalized",
 			Block(0),
-			WithPostCheck(ExpectEventDB()),
-		),
-		NewTestEvent("shutter active block 1",
-			ShutterActive(1),
 			WithPostCheck(ExpectEventDB()),
 		),
 		NewTestEvent("initial keyperset known, active block 3",
@@ -43,6 +42,10 @@ func TestSimpleInsert(t *testing.T) {
 			Block(2),
 			WithPostCheck(ExpectEventDB()),
 		),
+		NewTestEvent("shutter active in block 4",
+			ShutterActive(3),
+			WithPostCheck(ExpectEventDB()),
+		),
 		NewTestEvent("block 3 finalized, keyper set is active now",
 			Block(3),
 			WithPostCheck(ExpectEventDB()),
@@ -51,6 +54,7 @@ func TestSimpleInsert(t *testing.T) {
 					&models.State{
 						Metadata: models.Metadata{InsertBlock: 3},
 						Block:    3,
+						Active:   false,
 						Eon: &models.Eon{
 							Metadata: models.Metadata{
 								InsertBlock: 1,
@@ -80,13 +84,134 @@ func TestSimpleInsert(t *testing.T) {
 								},
 							},
 						},
-						ActiveUpdate: models.ActiveUpdate{
+						ActiveUpdate: &models.ActiveUpdate{
+							Metadata: models.Metadata{
+								InsertBlock: 3,
+							},
+							Block:  4,
+							Active: true,
+						},
+					})),
+		),
+
+		// Stop the handler and all started services
+		Close(),
+	)
+
+	err := service.Run(ctx, tt)
+	assert.NilError(t, err)
+}
+
+func TestReorg(t *testing.T) {
+	kpr := NewKeypers(t, 0, 3, 2, 3)
+	kprAddrs := kpr.KeyperSet(0).Members
+
+	ctx, cancelTimeout := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelTimeout()
+	tt := Setup(ctx, t)
+
+	tt.Events(
+		NewTestEvent("block 0 finalized",
+			Block(0),
+			WithPostCheck(ExpectEventDB()),
+		),
+		NewTestEvent("initial keyperset known, active block 3",
+			kpr.KeyperSet(1),
+			WithPostCheck(ExpectEventDB()),
+		),
+		NewTestEvent("block 1 finalized",
+			Block(1),
+			WithPostCheck(ExpectEventDB()),
+		),
+		NewTestEvent("pubkey keyper-set 0 received",
+			kpr.EonPubkey(2),
+			WithPostCheck(ExpectEventDB()),
+		),
+		NewTestEvent("block 2 finalized",
+			Block(2),
+			WithPostCheck(ExpectEventDB()),
+		),
+		NewTestEvent("shutter active in block 4",
+			ShutterActive(3),
+			WithPostCheck(ExpectEventDB()),
+		),
+		NewTestEvent("receive epoch",
+			kpr.EpochKey(3, false),
+			// epoch should be there after the event is processed
+			WithPostCheck(ExpectEventDB()),
+			// epoch should not be there anymore after the reorg happened
+			WithFinalCheck(
+				func(db *gorm.DB, _ *TestEvent) error {
+					epoch, err := query.GetEpochForInclusion(db, 3, 0)
+					if err != nil {
+						return errors.Wrap(err, "retrieve non-existing epoch")
+					}
+					if epoch != nil {
+						return errors.New("retrieved epoch, although reorg should have deleted it")
+					}
+					return nil
+				},
+			),
+		),
+		NewTestEvent("block 3 finalized",
+			Block(3),
+			WithPostCheck(
+				LatestState(
+					&models.State{
+						Metadata: models.Metadata{InsertBlock: 3},
+						Block:    3,
+						Active:   false,
+						Eon: &models.Eon{
 							Metadata: models.Metadata{
 								InsertBlock: 1,
 							},
-							Block:  1,
+							EonIndex:        0,
+							IsFinalized:     true,
+							ActivationBlock: 3,
+							Threshold:       2,
+							Keypers: []*models.Keyper{
+								{
+									Metadata: models.Metadata{
+										InsertBlock: 1,
+									},
+									Address: kprAddrs[0],
+								},
+								{
+									Metadata: models.Metadata{
+										InsertBlock: 1,
+									},
+									Address: kprAddrs[1],
+								},
+								{
+									Metadata: models.Metadata{
+										InsertBlock: 1,
+									},
+									Address: kprAddrs[2],
+								},
+							},
+						},
+						ActiveUpdate: &models.ActiveUpdate{
+							Metadata: models.Metadata{
+								InsertBlock: 3,
+							},
+							Block:  4,
 							Active: true,
 						},
+					})),
+		),
+		NewTestEvent("reorg incoming, signaling with parent of reorged latest head",
+			Block(0),
+		),
+		NewTestEvent("block 1 (reorg) finalized, everything deleted",
+			Block(1),
+			WithPostCheck(ExpectEventDB()),
+			WithFinalCheck(
+				LatestState(
+					&models.State{
+						Metadata:     models.Metadata{InsertBlock: 1},
+						Block:        1,
+						Active:       false,
+						ActiveUpdate: nil,
 					})),
 		),
 
@@ -113,10 +238,6 @@ func TestKeyperChange(t *testing.T) {
 			Block(0),
 			WithPostCheck(ExpectEventDB()),
 		),
-		NewTestEvent("initial keyperset known, active block 3",
-			kpr.KeyperSet(1),
-			WithPostCheck(ExpectEventDB()),
-		),
 		NewTestEvent("keyperset 0, active block 3",
 			kpr.KeyperSet(1),
 			WithPostCheck(ExpectEventDB()),
@@ -137,7 +258,7 @@ func TestKeyperChange(t *testing.T) {
 			kpr2.EonPubkey(2),
 			WithPostCheck(ExpectEventDB()),
 		),
-		NewTestEvent("shutter activated",
+		NewTestEvent("shutter active in block 3",
 			ShutterActive(2),
 			WithPostCheck(ExpectEventDB()),
 		),
@@ -160,12 +281,13 @@ func TestKeyperChange(t *testing.T) {
 						// This is not reflected in the state,
 						// because the latest state does not consider
 						// the pending block state
-						Eon: nil,
-						ActiveUpdate: models.ActiveUpdate{
+						Eon:    nil,
+						Active: false,
+						ActiveUpdate: &models.ActiveUpdate{
 							Metadata: models.Metadata{
 								InsertBlock: 2,
 							},
-							Block:  2,
+							Block:  3,
 							Active: true,
 						},
 					})),
@@ -185,6 +307,7 @@ func TestKeyperChange(t *testing.T) {
 					&models.State{
 						Metadata: models.Metadata{InsertBlock: 4},
 						Block:    4,
+						Active:   true,
 						Eon: &models.Eon{
 							Metadata: models.Metadata{
 								InsertBlock: 1,
@@ -214,13 +337,7 @@ func TestKeyperChange(t *testing.T) {
 								},
 							},
 						},
-						ActiveUpdate: models.ActiveUpdate{
-							Metadata: models.Metadata{
-								InsertBlock: 2,
-							},
-							Block:  2,
-							Active: true,
-						},
+						ActiveUpdate: nil,
 					})),
 		),
 
@@ -245,7 +362,7 @@ func TestEpochInsert(t *testing.T) {
 			WithPostCheck(ExpectEventDB()),
 		),
 		NewTestEvent("shutter active block 1",
-			ShutterActive(1),
+			ShutterActive(0),
 			WithPostCheck(ExpectEventDB()),
 		),
 		NewTestEvent("initial keyperset known, active block 3",
@@ -278,11 +395,6 @@ func TestEpochInsert(t *testing.T) {
 			Block(3),
 			WithPostCheck(ExpectEventDB()),
 		),
-		// FIXME: this hangs and causes the timeout to fire
-		// NewTestEvent("receive epoch with wrong key",
-		// 	kpr.EpochKey(4, true),
-		// 	WithPostCheck(ExpectError(ExpectEventDB())),
-		// ),
 		NewTestEvent("receive epoch",
 			kpr.EpochKey(4, false),
 			WithPostCheck(ExpectEventDB()),

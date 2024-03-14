@@ -26,8 +26,10 @@ type State struct {
 
 	Active bool
 
-	ActiveUpdate   ActiveUpdate
-	ActiveUpdateID uint
+	// this is the unpaused/paused state update
+	// that was *inserted* at the state's Block.
+	ActiveUpdate   *ActiveUpdate
+	ActiveUpdateID *uint
 }
 
 func (k *State) ModelVersion() uint {

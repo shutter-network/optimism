@@ -32,6 +32,7 @@ func NewServer(dkFn keys.RequestDecryptionKey, opts ...Option) (*Server, error) 
 	grpcServer := googrpc.NewServer(o.googopts...)
 	s := &Server{
 		options: o,
+		log:     o.log,
 		serv:    grpcServer,
 		dkFn:    dkFn,
 	}
@@ -117,13 +118,16 @@ func (s *Server) GetDecryptionKey(
 		return nil, errors.New("got no request")
 	}
 	block := uint(req.GetBlock())
-	ctx.Err()
+	s.log.Info("received gRPC call 'GetDecryptionKey'", "block", block)
 	// FIXME:
 	// If there is no STATE for a block, then it will return immediately
 	// Error: rpc error: code = Unknown desc = no block state found
 	// But if there is a state, but no key, then the request will block until
 	// timeout / forever
 	decrKey, err := s.getDecryptionKey(ctx, block)
+	defer func() {
+		s.log.Info("served gRPC call 'GetDecryptionKey'", "has-key", decrKey != nil, "error", err)
+	}()
 	if err != nil {
 		return nil, err
 	}

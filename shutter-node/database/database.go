@@ -31,7 +31,11 @@ func (d *Database) Connect(path string) error {
 	if path == "" {
 		return errors.New("no db path provided")
 	}
-	// path += "?cache=shared&mode=rwc"
+
+	// Enable the WAL mode for reader concurrency
+	// See https://github.com/mattn/go-sqlite3?tab=readme-ov-file#connection-string
+	// for more info.
+	path += "?mode=rwc&_journal_mode=WAL"
 	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
 	if err != nil {
 		return nil
@@ -41,17 +45,7 @@ func (d *Database) Connect(path string) error {
 	if err != nil {
 		return errors.Wrap(err, "get sql interface db")
 	}
-
-	// TODO: enable read/write concurrency
-	// PRAGMA journal_mode=WAL;
-
-	// TODO: tweak if necessary, or remove...
-	// TODO: we might have to enable concurrency:
-	// PRAGMA busy_timeout = milliseconds;
-	idb.SetConnMaxIdleTime(500)
-	idb.SetMaxOpenConns(20)
 	idb.SetMaxIdleConns(10)
-
 	return errors.Wrap(d.AutoMigrate(), "auto migrate database")
 }
 

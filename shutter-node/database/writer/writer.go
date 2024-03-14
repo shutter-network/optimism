@@ -51,7 +51,7 @@ func (w *DBWriter) Session(ctx context.Context, logger log.Logger) *gorm.DB {
 // queries the database and creates the sync-client
 // for the L2.
 // If the DBWriter is run in a routine by means of
-// the medley.Service inerface / the Start() method,
+// the medley.Service interface / the Start() method,
 // Init() should not be called manually.
 func (w *DBWriter) Init(ctx context.Context) error {
 	w.db = w.database.Session(ctx, w.log)
@@ -59,7 +59,7 @@ func (w *DBWriter) Init(ctx context.Context) error {
 	if err := opts.apply(w.options...); err != nil {
 		return err
 	}
-	var dbLastSyncedBlock *uint64 = nil
+	var syncStartBlock *uint64 = nil
 	err := w.db.Transaction(func(tx *gorm.DB) error {
 		latestState := &models.State{}
 		result := tx.Order("block").Limit(1).Find(latestState)
@@ -68,10 +68,11 @@ func (w *DBWriter) Init(ctx context.Context) error {
 			return result.Error
 		}
 		if result.RowsAffected > 0 {
-			// initial block
-			// FIXME: +1 or not?
-			lb := uint64(latestState.Block) + 1
-			dbLastSyncedBlock = &lb
+			// we found a last block that was processed
+			// completely in the db, this means this is no
+			// initial sync
+			startBlock := uint64(latestState.Block) + 1
+			syncStartBlock = &startBlock
 		}
 		return nil
 	}, &sql.TxOptions{
@@ -92,7 +93,7 @@ func (w *DBWriter) Init(ctx context.Context) error {
 	syncOptions := []syncclient.Option{
 		syncclient.WithClientURL(w.url),
 		syncclient.WithLogger(w.log),
-		// NOTE: this means we get the block-events for the time we missed,
+		// CHECKME: this means we get the block-events for the time we missed,
 		// but we don't get epoch keys!
 		// First: Beware of that, Second: make it so that the db-writer itself
 		// can handle missing epochs and does not make their existance
@@ -101,11 +102,12 @@ func (w *DBWriter) Init(ctx context.Context) error {
 		syncclient.WithSyncNewShutterState(w.HandleShutterState),
 		syncclient.WithSyncNewBlock(w.HandleLatestBlock),
 		syncclient.WithSyncNewKeyperSet(w.HandleKeyperSet),
-		syncclient.WithSyncStartBlock(number.NewBlockNumber(dbLastSyncedBlock)),
+		syncclient.WithSyncStartBlock(number.NewBlockNumber(syncStartBlock)),
 	}
-	if dbLastSyncedBlock != nil {
-		w.log.Info("found latest synced block in database, continueing sync from there", "block-number", dbLastSyncedBlock)
-		// we don't want to fetch active events before the sync start block
+	if syncStartBlock != nil {
+		w.log.Info("found latest synced block in database, continueing sync from there", "block-number", syncStartBlock)
+		// we don't want to fetch active events before the sync start block, this is
+		// only needed upon initial sync when not syncing all the way from the genesis block.
 		syncOptions = append(syncOptions, syncclient.WithNoFetchActivesBeforeStart())
 	}
 	c, err := syncclient.NewClient(

@@ -16,14 +16,14 @@ func GetActiveState(db *gorm.DB, block uint) (*models.ActiveUpdate, error) {
 	return CheckGetUniqueObject(update, res)
 }
 
-func GetLatestBlock(db *gorm.DB) (uint, error) {
+func GetLatestBlock(db *gorm.DB) (*uint, error) {
 	state := new(models.State)
 	db = db.Order("block DESC").Limit(1).Take(state)
 	state, err := CheckGetUniqueObject(state, db)
-	if err != nil {
-		return 0, err
+	if err != nil || state == nil {
+		return nil, err
 	}
-	return state.Block, nil
+	return &state.Block, nil
 }
 
 // This returns the latest COMITTED state.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/pkg/errors"
@@ -37,7 +36,7 @@ func getVerifyOneKey(msg *p2pmsg.DecryptionKeys) (*p2pmsg.Key, error) {
 	}
 }
 
-func DecyptionKeysEventToModel(decrKeys *p2pmsg.DecryptionKeys) (*models.Epoch, error) {
+func DecryptionKeysEventToModel(decrKeys *p2pmsg.DecryptionKeys) (*models.Epoch, error) {
 	key, err := getVerifyOneKey(decrKeys)
 	if err != nil {
 		return nil, err
@@ -56,6 +55,9 @@ func DecyptionKeysEventToModel(decrKeys *p2pmsg.DecryptionKeys) (*models.Epoch, 
 		return nil, err
 	}
 	epoch := &models.Epoch{
+		Metadata: models.Metadata{
+			InsertBlock: uint(idPreim.Uint64()),
+		},
 		EonIndex:  uint(decrKeys.Eon),
 		Identity:  &idPreim,
 		SecretKey: sk,
@@ -102,8 +104,6 @@ func (h DecryptionKeyHandler) ValidateMessage(ctx context.Context, msg p2pmsg.Me
 	if identity == nil {
 		return pubsub.ValidationReject, errors.New("no identity")
 	}
-	h.log.Info("received decryption key", "eon", decrKeys.GetEon(), "epoch-id", hexutil.Encode(identity))
-
 	// This does only validate that we know of "some" publickey belonging to a keyperset
 	// that will result in a successful roundtrip encryption.
 	// At this point we don't check that the keyperset is a currently active one
@@ -141,15 +141,6 @@ func (h DecryptionKeyHandler) ValidateMessage(ctx context.Context, msg p2pmsg.Me
 	if !ok {
 		return pubsub.ValidationReject, errors.Wrapf(err, "epoch secret key for epoch %v is not valid", epochSK.Identity)
 	}
-	// TODO:
-	// in the specs it says that inserting the key into the DB is conditional on:
-	// we want to verify that the correct key was indeed belonging to the at that time
-	// active keyperset. and that shutter was enabled!
-	// Is this required?
-	// The problem is that this might be hard to synchronize with the
-	// arrival of the latest-head event.
-	// I think it is better to just insert the key, and then check for the eon
-	// being active during retrieval of the key (long polling, reader)
 	return pubsub.ValidationAccept, nil
 }
 
@@ -158,11 +149,14 @@ func (h *DecryptionKeyHandler) HandleMessage(
 	msg p2pmsg.Message,
 ) ([]p2pmsg.Message, error) {
 	decrKeys := msg.(*p2pmsg.DecryptionKeys)
-	epoch, err := DecyptionKeysEventToModel(decrKeys)
+	epoch, err := DecryptionKeysEventToModel(decrKeys)
 	if err != nil {
 		return nil, errors.Wrap(err, "decode message to model")
 	}
-	h.log.Info("handling decryption-key", "epoch", epoch)
+	h.log.Info("received decryption-key message",
+		"reveal-block", epoch,
+		"message", decrKeys.LogInfo(),
+	)
 	// this can be blocking until there is a slot for writing
 	// to the DB
 	err = h.writer.HandleNewEpoch(ctx, epoch)

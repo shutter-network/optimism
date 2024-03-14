@@ -1,6 +1,8 @@
 package writer
 
 import (
+	"fmt"
+
 	"github.com/ethereum-optimism/optimism/shutter-node/database/models"
 	"github.com/ethereum-optimism/optimism/shutter-node/database/query"
 	"github.com/pkg/errors"
@@ -21,17 +23,63 @@ func LatestBlockEventToModel(lb *syncevent.LatestBlock) (*models.State, error) {
 	}, nil
 }
 
+func (w *DBWriter) deleteAbove(db *gorm.DB, blockNum uint) error {
+	w.log.Info("delete database entries", "where", fmt.Sprintf("insert_block > %d", blockNum))
+	// Unscoped because soft delete violates the unique constraint
+	res := db.Unscoped().Delete(&models.State{}, "insert_block > ?", blockNum)
+	if res.Error != nil {
+		return res.Error
+	}
+	res = db.Unscoped().Delete(&models.Eon{}, "insert_block > ?", blockNum)
+	if res.Error != nil {
+		return res.Error
+	}
+	res = db.Unscoped().Delete(&models.Keyper{}, "insert_block > ?", blockNum)
+	if res.Error != nil {
+		return res.Error
+	}
+	res = db.Unscoped().Delete(&models.Epoch{}, "insert_block > ?", blockNum)
+	if res.Error != nil {
+		return res.Error
+	}
+	return nil
+}
+
 func (w *DBWriter) handleLatestBlock(lb *syncevent.LatestBlock) error {
-	w.log.Info("handle latest block")
 	newState, err := LatestBlockEventToModel(lb)
 	if err != nil {
 		return errors.Wrap(err, "convert event")
 	}
+	w.log.Info("handle new l2 unsafe head", "block-number", newState.Block)
 	err = w.db.Transaction(func(tx *gorm.DB) error {
+		latest, err := query.GetLatestBlock(tx)
+		if err != nil {
+			return errors.Wrap(err, "query latest block")
+		}
+		if latest != nil && newState.Block <= *latest {
+			w.log.Warn("reorg detected", "block", newState.Block+1)
+			// if a reorg happens, then the chainsyncer will
+			// emit the latest-head before the newly reorged
+			// head in order to signal that a reorg is incoming.
+			// this means we only wind back changes ABOVE
+			// this block number.
+			if err := w.deleteAbove(tx, newState.Block); err != nil {
+				return errors.Wrap(err, "handle reorg in database")
+			}
+			// don't apply any further state-changes, since
+			// we don't want to alter the parent of the newly
+			// re-orged head.
+			// the new events and the latest head event will follow
+			// downstream
+			return nil
+		}
+
 		// this is just the onchain event emitted from the
 		// inbox contract.
-		// This does not conclude fully wether shutter is "actice"
-		// at the given time
+		// keypersetmanager contract.
+		// This does not conclude fully wether shutter is "active"
+		// at the given time, since this also depends on the
+		// eon key being broadcast by the keypers.
 		active, err := query.GetActiveState(tx, newState.Block)
 		if err != nil {
 			return errors.Wrap(err, "query active state")
@@ -39,24 +87,31 @@ func (w *DBWriter) handleLatestBlock(lb *syncevent.LatestBlock) error {
 		// this searches for the updates "block"
 		if active == nil {
 			// we don't have an active event up until this block
-			// XXX: what to do... we can create a "virtual" active entity
-			// e.g. for block==0 ?
-			active.Active = false
-			active.Block = 0
-			active.InsertBlock = newState.Block
+			// create a virtual active-update entity, but don't persist to db
+			active = &models.ActiveUpdate{
+				Metadata: models.Metadata{
+					InsertBlock: newState.Block,
+				},
+				Block:  0,
+				Active: true,
+			}
 		}
-		w.log.Info("handle-latest block query active", "active", active)
 		newState.Active = active.Active
 
+		// query the database wether we received a paused/unpaused
+		// state update this block, taking effect the next block
 		activeUpdate, err := query.GetActiveUpdate(tx, newState.Block)
 		if err != nil {
 			return errors.Wrap(err, "query active update")
 		}
 		if activeUpdate != nil {
-			newState.ActiveUpdate = *active
-			newState.ActiveUpdateID = active.Metadata.ID
+			newState.ActiveUpdate = activeUpdate
+			newState.ActiveUpdateID = &activeUpdate.Metadata.ID
 		}
 
+		// query the database for the active eon at the block.
+		// this can be an older eon, or one for the current block that was
+		// just inserted into the db
 		eon := &models.Eon{}
 		result := tx.Scopes(query.ScopeEonAtBlock(newState.Block)).Find(eon)
 		if result.Error != nil {
@@ -66,15 +121,6 @@ func (w *DBWriter) handleLatestBlock(lb *syncevent.LatestBlock) error {
 			newState.Eon = eon
 			newState.EonID = &eon.Metadata.ID
 		}
-		w.log.Info("handle-latest block eon", "eon", eon)
-
-		// FIXME: within the STF, IsShutterEnabled first checks that
-		// an Eon key exists for the active keyper set, and then wether
-		// the Inbox contract is active.
-		// This means that a missing Eon-key for the current keyper-set also means
-		// that shutter is not active.
-		// This is not reflected in the State.Active field, is this
-		// is only concerned with the shutter inbox activation events.
 
 		// We don't check that a Publickey exists for the eon,
 		// since this is strictly only necessary for receiving epoch-secret-keys
@@ -87,10 +133,15 @@ func (w *DBWriter) handleLatestBlock(lb *syncevent.LatestBlock) error {
 	})
 
 	if err == nil {
+		var eonIndex *uint
+		if newState.Eon != nil {
+			eonIndex = &newState.Eon.EonIndex
+		}
 		w.log.Info(
-			"latest head has been inserted to db",
+			"new l2 unsafe head state has been inserted to db",
+			"eon-index", eonIndex,
 			"block-number", newState.Block,
-			"state", newState,
+			"shutter-active", newState.Active,
 		)
 	}
 	return err

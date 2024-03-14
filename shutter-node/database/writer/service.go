@@ -46,7 +46,7 @@ func (w *DBWriter) HandleEventSync(ev any) error {
 	case *syncevent.LatestBlock:
 		err = w.handleLatestBlock(evTyped)
 	case *syncevent.ShutterState:
-		err = w.handleShutterState(evTyped)
+		err = w.handleShutterActive(evTyped)
 	case *models.Epoch:
 		err = w.handleNewEpoch(evTyped)
 	default:

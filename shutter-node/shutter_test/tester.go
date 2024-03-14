@@ -35,15 +35,14 @@ func Setup(ctx context.Context, t *testing.T) *Tester {
 	t.Helper()
 	db := &database.Database{}
 
-	f, err := os.CreateTemp("", "test-shutter-node-db.")
+	path, err := os.MkdirTemp("", "test-shutter-node-db-*")
 	assert.NilError(t, err)
 	// close and remove the temporary file at the end of the program
 	t.Cleanup(func() {
-		f.Close()
-		os.Remove(f.Name())
+		os.RemoveAll(path)
 	})
 
-	err = db.Connect(f.Name())
+	err = db.Connect(path + "/db")
 	assert.NilError(t, err)
 
 	logger := log.New()

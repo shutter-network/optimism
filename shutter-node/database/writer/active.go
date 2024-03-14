@@ -23,13 +23,13 @@ func ShutterStateToActive(s *syncevent.ShutterState) (*models.ActiveUpdate, erro
 	}, nil
 }
 
-func (w *DBWriter) handleShutterState(epk *syncevent.ShutterState) error {
-	w.log.Info("called HandleShutterState in syncer")
+func (w *DBWriter) handleShutterActive(epk *syncevent.ShutterState) error {
 	active, err := ShutterStateToActive(epk)
 	if err != nil {
 		return errors.Wrap(err, "convert event")
 	}
-	w.log.Debug("SHDEBUG: got shutter-active", "active", active.Active, "block", active.Block)
+	w.log.Info("handle shutter paused/unpaused event",
+		"unpaused", active.Active, "block", active.Block)
 	return w.db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Create(active)
 		if result.Error != nil {

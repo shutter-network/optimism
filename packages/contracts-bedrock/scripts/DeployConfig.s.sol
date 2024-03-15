@@ -128,7 +128,7 @@ contract DeployConfig is Script {
             string[] memory cmd = new string[](3);
             cmd[0] = Executables.bash;
             cmd[1] = "-c";
-            cmd[2] = string.concat("cast block ", vm.toString(tag), " --json | ", Executables.jq, " .timestamp");
+            cmd[2] = string.concat("cast block ", vm.toString(tag), " --rpc-url ", vm.envString("L1_RPC_URL"), " --json | ", Executables.jq, " .timestamp");
             bytes memory res = vm.ffi(cmd);
             return stdJson.readUint(string(res), "");
         }

@@ -117,7 +117,7 @@ pre-devnet:
 devnet-up: pre-devnet
 	./ops/scripts/newer-file.sh .devnet/allocs-l1.json ./packages/contracts-bedrock \
 		|| make devnet-allocs
-	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=.
+	NETWORK="devnet" PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=.
 .PHONY: devnet-up
 
 # alias for devnet-up
@@ -128,13 +128,13 @@ devnet-test: pre-devnet
 .PHONY: devnet-test
 
 devnet-down:
-	@(cd ./ops-bedrock && GENESIS_TIMESTAMP=$(shell date +%s) docker compose --profile shutter stop)
+	@(cd ./ops-bedrock && NETWORK="devnet" GENESIS_TIMESTAMP=$(shell date +%s) docker compose --profile shutter stop)
 .PHONY: devnet-down
 
 devnet-clean:
 	rm -rf ./packages/contracts-bedrock/deployments/devnetL1
 	rm -rf ./.devnet
-	cd ./ops-bedrock && docker compose --profile shutter down
+	cd ./ops-bedrock && NETWORK="devnet" docker compose --profile shutter down
 	docker image ls 'ops-bedrock*' --format='{{.Repository}}' | xargs -r docker rmi
 	docker volume ls --filter name=ops-bedrock --format='{{.Name}}' | xargs -r docker volume rm
 	rm -rf ./ops-bedrock/data/shutter-node
@@ -145,7 +145,7 @@ devnet-allocs: pre-devnet
 	PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/main.py --monorepo-dir=. --allocs
 
 devnet-logs:
-	@(cd ./ops-bedrock && docker compose --profile shutter logs -f)
+	@(cd ./ops-bedrock && NETWORK="devnet" docker compose --profile shutter logs -f)
 	.PHONY: devnet-logs
 
 test-unit:
@@ -192,3 +192,20 @@ install-geth:
  			go install -v github.com/ethereum/go-ethereum/cmd/geth@$(shell cat .gethrc); \
  			echo "Installed geth!"; true)
 .PHONY: install-geth
+
+dev-sepolia-up: pre-devnet
+	NETWORK="sepolia" PYTHONPATH=./bedrock-devnet $(PYTHON) ./bedrock-devnet/devnet/sepolia.py --monorepo-dir=. --l1-rpc=${L1_RPC_URL}
+.PHONY: dev-sepolia-up
+
+dev-sepolia-clean:
+	cd ./ops-bedrock && NETWORK="sepolia" docker compose --profile shutter down
+	docker image ls 'ops-bedrock*' --format='{{.Repository}}' | xargs -r docker rmi
+	docker volume ls --filter name=ops-bedrock --format='{{.Name}}' | xargs -r docker volume rm
+	rm -rf ./packages/contracts-bedrock/deployments/dev-sepolia
+	rm -rf ./.devnet
+	rm -f ./packages/contracts-bedrock/deploy-config/dev-sepolia.json
+.PHONY: dev-sepolia-clean
+
+dev-sepolia-down:
+	@(cd ./ops-bedrock && NETWORK="sepolia" GENESIS_TIMESTAMP=$(shell date +%s) docker compose --profile shutter stop)
+.PHONY: dev-sepolia-down

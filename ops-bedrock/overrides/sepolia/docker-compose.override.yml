@@ -1,0 +1,52 @@
+services:
+  op-node:
+    depends_on:
+     - op_stack_go_builder
+     - l2
+    command: >
+      op-node
+      --l1=${L1_RPC_URL_WSS}
+      --l2=http://l2:8551
+      --l2.jwt-secret=/config/test-jwt-secret.txt
+      --sequencer.enabled
+      --sequencer.l1-confs=0
+      --verifier.l1-confs=0
+      --p2p.sequencer.key=8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba
+      --rollup.config=/rollup.json
+      --rpc.addr=0.0.0.0
+      --rpc.port=8545
+      --p2p.listen.ip=0.0.0.0
+      --p2p.listen.tcp=9003
+      --p2p.listen.udp=9003
+      --p2p.scoring.peers=light
+      --p2p.ban.peers=true
+      --snapshotlog.file=/op_log/snapshot.log
+      --p2p.priv.path=/config/p2p-node-key.txt
+      --metrics.enabled
+      --metrics.addr=0.0.0.0
+      --metrics.port=7300
+      --pprof.enabled
+      --shutter.grpc-address=shutter-node:8282
+
+  op-proposer:
+    depends_on:
+      - op_stack_go_builder
+      - l2
+      - op-node
+    environment:
+      OP_PROPOSER_L1_ETH_RPC: ${L1_RPC_URL}
+      OP_PROPOSER_POLL_INTERVAL: 10s
+      OP_PROPOSER_NUM_CONFIRMATIONS: 50
+      OP_PROPOSER_PRIVATE_KEY: ${OP_PROPOSER_PRIVATE_KEY}
+
+  op-batcher:
+    depends_on:
+      - op_stack_go_builder
+      - l2
+      - op-node
+    environment:
+      OP_BATCHER_L1_ETH_RPC: ${L1_RPC_URL}
+      OP_BATCHER_MAX_CHANNEL_DURATION: 50
+      OP_BATCHER_POLL_INTERVAL: 10s
+      OP_BATCHER_NUM_CONFIRMATIONS: 50
+      OP_BATCHER_PRIVATE_KEY: ${OP_BATCHER_PRIVATE_KEY}

@@ -475,7 +475,7 @@ abstract contract Deployer is Script {
         } else if (chainid == Chains.Hardhat) {
             return "hardhat";
         } else if (chainid == Chains.Sepolia) {
-            return "sepolia";
+            return "dev-sepolia";
         } else if (chainid == Chains.OPSepolia) {
             return "optimism-sepolia";
         } else {

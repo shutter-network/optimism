@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/shutter-node/database"
 	"github.com/ethereum-optimism/optimism/shutter-node/database/models"
+	"github.com/ethereum-optimism/optimism/shutter-node/database/query"
 	syncclient "github.com/shutter-network/rolling-shutter/rolling-shutter/medley/chainsync"
 	syncevent "github.com/shutter-network/rolling-shutter/rolling-shutter/medley/chainsync/event"
 	"github.com/shutter-network/rolling-shutter/rolling-shutter/medley/encodeable/number"
@@ -61,17 +62,15 @@ func (w *DBWriter) Init(ctx context.Context) error {
 	}
 	var syncStartBlock *uint64 = nil
 	err := w.db.Transaction(func(tx *gorm.DB) error {
-		latestState := &models.State{}
-		result := tx.Order("block").Limit(1).Find(latestState)
-		if result.Error != nil {
-			// TODO: are there errors that we can catch?
-			return result.Error
+		latest, err := query.GetLatestBlock(tx)
+		if err != nil {
+			return err
 		}
-		if result.RowsAffected > 0 {
+		if latest != nil {
 			// we found a last block that was processed
 			// completely in the db, this means this is no
 			// initial sync
-			startBlock := uint64(latestState.Block) + 1
+			startBlock := uint64(*latest) + 1
 			syncStartBlock = &startBlock
 		}
 		return nil
@@ -105,7 +104,8 @@ func (w *DBWriter) Init(ctx context.Context) error {
 		syncclient.WithSyncStartBlock(number.NewBlockNumber(syncStartBlock)),
 	}
 	if syncStartBlock != nil {
-		w.log.Info("found latest synced block in database, continueing sync from there", "block-number", syncStartBlock)
+		w.log.Info("found latest synced block in database, continueing sync from there", "block-number", *syncStartBlock)
+
 		// we don't want to fetch active events before the sync start block, this is
 		// only needed upon initial sync when not syncing all the way from the genesis block.
 		syncOptions = append(syncOptions, syncclient.WithNoFetchActivesBeforeStart())

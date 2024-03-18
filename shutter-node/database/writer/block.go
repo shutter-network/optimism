@@ -38,10 +38,13 @@ func (w *DBWriter) deleteAbove(db *gorm.DB, blockNum uint) error {
 	if res.Error != nil {
 		return res.Error
 	}
-	res = db.Unscoped().Delete(&models.Epoch{}, "insert_block > ?", blockNum)
-	if res.Error != nil {
-		return res.Error
-	}
+	// NOTE: We don't delete the epoch keys we previously received,
+	// since they keypers currently don't rebroadcast them upon a reorg,
+	// and there would be a race condition even if they would do so.
+	// FIXME: Handle the edgecase, where during reorg the keyperset
+	// for that eon-index changes and the old, now invalid key is still
+	// present in the database. The new key currently would not be inserted into the
+	// db because of the "on-conflict do nothing" policy.
 	return nil
 }
 

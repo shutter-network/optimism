@@ -108,6 +108,7 @@ def init_config(paths, l1_rpc):
     }, capture_output=True).stdout.decode("utf-8").strip('\n')
 
     deploy_config['l1StartingBlockTag'] = latest_hash
+    deploy_config['p2pSequencerAddress'] = os.getenv("P2P_SEQUENCER_PUBLIC_KEY")
     write_json(paths.devnet_config_path, deploy_config)
 
 
